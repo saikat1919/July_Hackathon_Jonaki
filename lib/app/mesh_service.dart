@@ -11,7 +11,9 @@ import '../store/envelope_store.dart';
 import '../transport/nearby_transport.dart';
 import '../transport/transport.dart';
 import '../gossip/crypto_box.dart';
+import '../store/sqflite_store.dart';
 import 'chat.dart';
+import 'identity_store.dart';
 import 'key_directory.dart';
 import 'report.dart';
 import 'sos.dart';
@@ -28,7 +30,7 @@ class MeshService extends ChangeNotifier {
   final String serviceId;
 
   Identity? identity;
-  MemoryEnvelopeStore? store;
+  EnvelopeStore? store;
   NearbyTransport? transport;
   GossipNode? node;
 
@@ -57,9 +59,31 @@ class MeshService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Restores identity and history before the mesh starts. Both survive a
+  /// restart: the identity from secure storage, everything else from SQLite.
   Future<void> bootIdentity() async {
-    identity = await Identity.generate();
+    identity = await IdentityStore.loadOrCreate();
     _say('identity ${identity!.fingerprint}');
+
+    try {
+      final db = await SqfliteEnvelopeStore.open();
+      store = db;
+      // Drop anything that expired while the app was closed, then restore what
+      // is left so a restart does not look like a factory reset.
+      final swept = await db.sweepExpired();
+      final restored = await db.all();
+      inbox
+        ..clear()
+        ..addAll(restored);
+      _say('restored ${restored.length} message'
+          '${restored.length == 1 ? '' : 's'}'
+          '${swept > 0 ? ' ($swept expired)' : ''}');
+    } catch (err) {
+      // Storage is a nice-to-have, not a prerequisite for communicating.
+      _say('storage unavailable, running in memory only: $err');
+      store ??= MemoryEnvelopeStore();
+    }
+    notifyListeners();
   }
 
   /// Starts advertising and discovering. On one phone this finds nobody, which
@@ -83,8 +107,10 @@ class MeshService extends ChangeNotifier {
       return;
     }
 
-    identity ??= await Identity.generate();
-    final s = MemoryEnvelopeStore();
+    identity ??= await IdentityStore.loadOrCreate();
+    // Reuse the store opened at boot so restored history is not thrown away
+    // the moment the mesh starts.
+    final s = store ??= MemoryEnvelopeStore();
     final t = NearbyTransport(
       myFingerprint: identity!.fingerprint,
       serviceId: serviceId,
@@ -121,7 +147,6 @@ class MeshService extends ChangeNotifier {
       // Screen-on is the demo posture: Android throttles radios for locked
       // devices, so the mule carry fails silently in a pocket.
       await WakelockPlus.enable();
-      store = s;
       transport = t;
       node = n;
       running = true;
