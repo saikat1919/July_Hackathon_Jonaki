@@ -1,6 +1,38 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Nearby Connections needs all of these. Missing any one makes discovery
+         fail silently, which on stage looks like a broken mesh rather than an
+         ungranted checkbox. -->
+
+    <!-- Legacy Bluetooth, capped below 31 where the new runtime perms take over -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+    <!-- Android 12+ -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Android 13+ -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Nearby requires Location even though this app never asks where you are -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Wi-Fi transport -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- Foreground service keeps the radios alive while the app is on screen -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
-        android:label="crisis_mesh"
+        android:label="Crisis Mesh"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
