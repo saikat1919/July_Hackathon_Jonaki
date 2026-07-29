@@ -9,6 +9,7 @@ import '../gossip/identity.dart';
 import '../store/envelope_store.dart';
 import '../transport/nearby_transport.dart';
 import '../transport/transport.dart';
+import 'chat.dart';
 
 /// Owns the mesh for the whole app: identity, store, transport, node.
 /// The UI reads this and nothing else.
@@ -113,11 +114,39 @@ class MeshService extends ChangeNotifier {
     _say('stopped');
   }
 
-  Future<void> sendChat(String text) async {
+  /// [to] is a peer fingerprint, or null to broadcast to everyone nearby.
+  /// Addressing, not privacy: every relay can still read it until X25519 lands.
+  Future<void> sendChat(String text, {String? to}) async {
     final n = node;
-    if (n == null) return;
-    await n.publish(EnvelopeType.chat, encodePayload({'t': text}));
-    _say('sent chat "$text"');
+    if (n == null || text.trim().isEmpty) return;
+    if (text.length > maxTextChars) {
+      _say('message too long (${text.length}/$maxTextChars)');
+      return;
+    }
+    await n.publish(
+      EnvelopeType.chat,
+      encodePayload({'t': text, 'to': ?to}),
+    );
+    _say(peers.isEmpty
+        ? 'queued (no peers yet) "$text"'
+        : 'sent to ${peers.length} peer(s) "$text"');
+  }
+
+  /// Everyone this phone has heard from, whether or not they are in range now.
+  /// A peer who walked away still has a thread; the mesh will deliver later.
+  Set<String> get knownFingerprints => {
+        for (final e in inbox) e.senderFingerprint,
+      }..remove(fingerprint);
+
+  List<ChatMessage> messagesWith(String? peer) {
+    final me = fingerprint;
+    final out = <ChatMessage>[];
+    for (final e in inbox) {
+      final m = ChatMessage.fromEnvelope(e, me);
+      if (m != null && m.inThreadWith(peer, me)) out.add(m);
+    }
+    out.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+    return out;
   }
 
   Future<void> sendSos(String kind, String note) async {

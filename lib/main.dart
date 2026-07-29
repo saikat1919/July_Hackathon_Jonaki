@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app/chat_screen.dart';
+import 'app/contacts.dart';
 import 'app/mesh_service.dart';
 
 /// Demo build. The APK handed to judges MUST use a different serviceId, or
@@ -16,24 +18,28 @@ class CrisisMeshApp extends StatelessWidget {
         title: 'Crisis Mesh',
         debugShowCheckedModeBanner: false,
         theme: ThemeData.dark(useMaterial3: true),
-        home: const MeshScreen(),
+        home: const HomeShell(),
       );
 }
 
-class MeshScreen extends StatefulWidget {
-  const MeshScreen({super.key});
+class HomeShell extends StatefulWidget {
+  const HomeShell({super.key});
 
   @override
-  State<MeshScreen> createState() => _MeshScreenState();
+  State<HomeShell> createState() => _HomeShellState();
 }
 
-class _MeshScreenState extends State<MeshScreen> {
+class _HomeShellState extends State<HomeShell> {
   final mesh = MeshService(serviceId: kServiceId);
+  final contacts = Contacts();
+  int _tab = 0;
 
   @override
   void initState() {
     super.initState();
     mesh.addListener(_refresh);
+    contacts.addListener(_refresh);
+    contacts.load();
     mesh.bootIdentity();
   }
 
@@ -44,88 +50,112 @@ class _MeshScreenState extends State<MeshScreen> {
   @override
   void dispose() {
     mesh.removeListener(_refresh);
+    contacts.removeListener(_refresh);
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final err = mesh.startupError;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Crisis Mesh · ${mesh.fingerprint}'),
-        actions: [
-          IconButton(
-            tooltip: mesh.running ? 'stop mesh' : 'start mesh',
-            icon: Icon(mesh.running ? Icons.stop : Icons.play_arrow),
-            onPressed: () => mesh.running ? mesh.stop() : mesh.start(),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _StatusStrip(mesh: mesh),
-            if (err != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Card(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Text(err),
-                  ),
-                ),
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: Text(_tab == 0 ? 'Chat' : 'Mesh · ${mesh.fingerprint}'),
+          actions: [
+            // Peer count belongs on every screen: it is the one number that
+            // tells you whether anything you send can go anywhere.
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Text('${mesh.peers.length} peer'
+                    '${mesh.peers.length == 1 ? '' : 's'}'),
               ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: mesh.running
-                  ? () => mesh.sendSos('medical', 'test from ${mesh.fingerprint}')
-                  : null,
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-                padding: const EdgeInsets.symmetric(vertical: 20),
-              ),
-              icon: const Icon(Icons.emergency_share),
-              label: const Text('SOS  ·  জরুরি', style: TextStyle(fontSize: 20)),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: mesh.running
-                      ? () => mesh.sendChat('hello from ${mesh.fingerprint}')
-                      : null,
-                  child: const Text('send chat'),
-                ),
-                OutlinedButton(
-                  onPressed: mesh.running ? mesh.floodChat : null,
-                  child: const Text('queue 50 chat'),
-                ),
-                OutlinedButton(
-                  onPressed: mesh.running ? mesh.unlockTopology : null,
-                  child: Text(mesh.locked ? 'unlock topology' : 'lock: OFF'),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final line in mesh.log)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text('· $line',
-                          style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 12)),
-                    ),
-                ],
-              ),
+            IconButton(
+              tooltip: mesh.running ? 'stop mesh' : 'start mesh',
+              icon: Icon(mesh.running ? Icons.stop : Icons.play_arrow),
+              onPressed: () => mesh.running ? mesh.stop() : mesh.start(),
             ),
           ],
         ),
+        body: _tab == 0
+            ? ChatScreen(mesh: mesh, contacts: contacts)
+            : MeshScreen(mesh: mesh),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _tab,
+          onDestinationSelected: (i) => setState(() => _tab = i),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.forum), label: 'Chat'),
+            NavigationDestination(icon: Icon(Icons.hub), label: 'Mesh'),
+          ],
+        ),
+      );
+}
+
+/// Diagnostics and demo controls. This is the screen the day-2 gate runs on.
+class MeshScreen extends StatelessWidget {
+  const MeshScreen({super.key, required this.mesh});
+
+  final MeshService mesh;
+
+  @override
+  Widget build(BuildContext context) {
+    final err = mesh.startupError;
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _StatusStrip(mesh: mesh),
+          if (err != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Card(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(err),
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: mesh.running
+                ? () => mesh.sendSos('medical', 'test from ${mesh.fingerprint}')
+                : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+            ),
+            icon: const Icon(Icons.emergency_share),
+            label: const Text('SOS  ·  জরুরি', style: TextStyle(fontSize: 20)),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              OutlinedButton(
+                onPressed: mesh.running ? mesh.floodChat : null,
+                child: const Text('queue 50 chat'),
+              ),
+              OutlinedButton(
+                onPressed: mesh.running ? mesh.unlockTopology : null,
+                child: Text(mesh.locked ? 'unlock topology' : 'lock: OFF'),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final line in mesh.log)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('· $line',
+                        style: const TextStyle(
+                            fontFamily: 'monospace', fontSize: 12)),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -137,24 +167,21 @@ class _StatusStrip extends StatelessWidget {
   final MeshService mesh;
 
   @override
-  Widget build(BuildContext context) {
-    final peers = mesh.peers.length;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _stat(context, 'peers', '$peers'),
-            _stat(context, 'inbox', '${mesh.inbox.length}'),
-            _stat(context, 'syncs', '${mesh.syncCount}'),
-            _stat(context, 'bad sig', '${mesh.rejected}'),
-            _stat(context, 'mesh', mesh.running ? 'ON' : 'off'),
-          ],
+  Widget build(BuildContext context) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _stat(context, 'peers', '${mesh.peers.length}'),
+              _stat(context, 'inbox', '${mesh.inbox.length}'),
+              _stat(context, 'syncs', '${mesh.syncCount}'),
+              _stat(context, 'bad sig', '${mesh.rejected}'),
+              _stat(context, 'mesh', mesh.running ? 'ON' : 'off'),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
 
   Widget _stat(BuildContext context, String label, String value) => Column(
         children: [

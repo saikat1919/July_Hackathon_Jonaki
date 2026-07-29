@@ -64,25 +64,74 @@ class NearbyTransport implements Transport {
   @override
   Set<String> get connectedPeers => Set.unmodifiable(_connected);
 
+  bool _starting = false;
+
+  /// Start must be safe to call twice.
+  ///
+  /// Nearby throws STATUS_ALREADY_ADVERTISING (8001) if you advertise while
+  /// already advertising, and the failure modes that get you there are exactly
+  /// the ones a presenter hits: double-tapping the button, tapping again during
+  /// the permission dialog, or advertising succeeding while discovery throws so
+  /// the caller believes nothing started. So: reset the radios first, and treat
+  /// "already doing it" as success rather than an error, because it is.
   @override
   Future<void> start() async {
-    await _nearby.startAdvertising(
-      myFingerprint,
-      Strategy.P2P_CLUSTER,
-      serviceId: serviceId,
-      onConnectionInitiated: _onConnectionInitiated,
-      onConnectionResult: _onConnectionResult,
-      onDisconnected: _onDisconnected,
-    );
-    await _nearby.startDiscovery(
-      myFingerprint,
-      Strategy.P2P_CLUSTER,
-      serviceId: serviceId,
-      onEndpointFound: _onEndpointFound,
-      onEndpointLost: (id) {
-        if (id != null) _drop(id);
-      },
-    );
+    if (_starting) return;
+    _starting = true;
+    try {
+      await _resetRadios();
+      await _guard('advertising', () async {
+        await _nearby.startAdvertising(
+          myFingerprint,
+          Strategy.P2P_CLUSTER,
+          serviceId: serviceId,
+          onConnectionInitiated: _onConnectionInitiated,
+          onConnectionResult: _onConnectionResult,
+          onDisconnected: _onDisconnected,
+        );
+      });
+      await _guard('discovery', () async {
+        await _nearby.startDiscovery(
+          myFingerprint,
+          Strategy.P2P_CLUSTER,
+          serviceId: serviceId,
+          onEndpointFound: _onEndpointFound,
+          onEndpointLost: (id) {
+            if (id != null) _drop(id);
+          },
+        );
+      });
+    } finally {
+      _starting = false;
+    }
+  }
+
+  /// Clears any advertising or discovery left over from a previous run, a hot
+  /// restart, or a half-failed start.
+  Future<void> _resetRadios() async {
+    try {
+      await _nearby.stopAdvertising();
+    } catch (_) {/* was not advertising */}
+    try {
+      await _nearby.stopDiscovery();
+    } catch (_) {/* was not discovering */}
+  }
+
+  /// Swallows only the "already running" statuses. Anything else is a genuine
+  /// failure and must reach the user rather than being hidden.
+  Future<void> _guard(String what, Future<void> Function() body) async {
+    try {
+      await body();
+    } catch (err) {
+      final text = err.toString();
+      if (text.contains('ALREADY_ADVERTISING') ||
+          text.contains('ALREADY_DISCOVERING') ||
+          text.contains('8001') ||
+          text.contains('8002')) {
+        return; // already doing the thing we asked for
+      }
+      throw Exception('$what failed: $err');
+    }
   }
 
   @override
