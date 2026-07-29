@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'gossip/envelope.dart';
-import 'gossip/gossip_node.dart';
-import 'gossip/identity.dart';
-import 'store/envelope_store.dart';
-import 'transport/transport.dart';
+import 'app/mesh_service.dart';
 
-/// Day-1 harness, not the product. It proves on real hardware that identity
-/// generation, signing, and the gossip pipeline all work inside a release APK
-/// before any radio is involved. The Nearby transport lands on day 2, the real
-/// screens on day 2 afternoon and day 3.
+/// Demo build. The APK handed to judges MUST use a different serviceId, or
+/// their phones advertise into the demo's radio cluster during judging.
+const String kServiceId = 'bd.july.crisis_mesh.demo';
+
 void main() => runApp(const CrisisMeshApp());
 
 class CrisisMeshApp extends StatelessWidget {
@@ -18,94 +14,114 @@ class CrisisMeshApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'Crisis Mesh',
+        debugShowCheckedModeBanner: false,
         theme: ThemeData.dark(useMaterial3: true),
-        home: const HarnessScreen(),
+        home: const MeshScreen(),
       );
 }
 
-class HarnessScreen extends StatefulWidget {
-  const HarnessScreen({super.key});
+class MeshScreen extends StatefulWidget {
+  const MeshScreen({super.key});
 
   @override
-  State<HarnessScreen> createState() => _HarnessScreenState();
+  State<MeshScreen> createState() => _MeshScreenState();
 }
 
-class _HarnessScreenState extends State<HarnessScreen> {
-  Identity? _me;
-  final _log = <String>[];
+class _MeshScreenState extends State<MeshScreen> {
+  final mesh = MeshService(serviceId: kServiceId);
 
   @override
   void initState() {
     super.initState();
-    _boot();
+    mesh.addListener(_refresh);
+    mesh.bootIdentity();
   }
 
-  Future<void> _boot() async {
-    final me = await Identity.generate();
-    if (!mounted) return;
-    setState(() {
-      _me = me;
-      _log.add('identity generated');
-    });
+  void _refresh() {
+    if (mounted) setState(() {});
   }
 
-  /// Runs the same convergence check as the test suite, on the phone. Green
-  /// here plus four phones that will not relay means the radio is the fault.
-  Future<void> _selfCheck() async {
-    final net = MemoryNetwork();
-    final nodes = <String, GossipNode>{};
-    final stores = <String, MemoryEnvelopeStore>{};
-    for (final id in ['A', 'B', 'C', 'D']) {
-      final store = MemoryEnvelopeStore();
-      final n = GossipNode(
-        identity: await Identity.generate(),
-        store: store,
-        transport: net.register(id),
-        syncCooldown: Duration.zero,
-      );
-      await n.start();
-      nodes[id] = n;
-      stores[id] = store;
-    }
-    net.link('A', 'B');
-    net.link('B', 'C');
-    net.link('C', 'D');
-    await Future<void>.delayed(const Duration(milliseconds: 60));
-
-    final sent = await nodes['A']!
-        .publish(EnvelopeType.chat, encodePayload({'t': 'self check'}));
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-
-    final atD = await stores['D']!.get(sent.id);
-    if (!mounted) return;
-    setState(() => _log.add(atD == null
-        ? 'SELF CHECK FAILED: A did not reach D'
-        : 'self check OK: A reached D in ${atD.path.length} hops'));
+  @override
+  void dispose() {
+    mesh.removeListener(_refresh);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final me = _me;
+    final err = mesh.startupError;
     return Scaffold(
-      appBar: AppBar(title: const Text('Crisis Mesh — day 1 harness')),
+      appBar: AppBar(
+        title: Text('Crisis Mesh · ${mesh.fingerprint}'),
+        actions: [
+          IconButton(
+            tooltip: mesh.running ? 'stop mesh' : 'start mesh',
+            icon: Icon(mesh.running ? Icons.stop : Icons.play_arrow),
+            onPressed: () => mesh.running ? mesh.stop() : mesh.start(),
+          ),
+        ],
+      ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('ID: ${me?.fingerprint ?? '...'}',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            const Text('No phone number. The public key is the identity.'),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: me == null ? null : _selfCheck,
-              child: const Text('Run 4-node gossip self check'),
+            _StatusStrip(mesh: mesh),
+            if (err != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Card(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(err),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: mesh.running
+                  ? () => mesh.sendSos('medical', 'test from ${mesh.fingerprint}')
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                padding: const EdgeInsets.symmetric(vertical: 20),
+              ),
+              icon: const Icon(Icons.emergency_share),
+              label: const Text('SOS  ·  জরুরি', style: TextStyle(fontSize: 20)),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: mesh.running
+                      ? () => mesh.sendChat('hello from ${mesh.fingerprint}')
+                      : null,
+                  child: const Text('send chat'),
+                ),
+                OutlinedButton(
+                  onPressed: mesh.running ? mesh.floodChat : null,
+                  child: const Text('queue 50 chat'),
+                ),
+                OutlinedButton(
+                  onPressed: mesh.running ? mesh.unlockTopology : null,
+                  child: Text(mesh.locked ? 'unlock topology' : 'lock: OFF'),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
             Expanded(
               child: ListView(
-                children: [for (final line in _log) Text('• $line')],
+                children: [
+                  for (final line in mesh.log)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text('· $line',
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 12)),
+                    ),
+                ],
               ),
             ),
           ],
@@ -113,4 +129,37 @@ class _HarnessScreenState extends State<HarnessScreen> {
       ),
     );
   }
+}
+
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({required this.mesh});
+
+  final MeshService mesh;
+
+  @override
+  Widget build(BuildContext context) {
+    final peers = mesh.peers.length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _stat(context, 'peers', '$peers'),
+            _stat(context, 'inbox', '${mesh.inbox.length}'),
+            _stat(context, 'syncs', '${mesh.syncCount}'),
+            _stat(context, 'bad sig', '${mesh.rejected}'),
+            _stat(context, 'mesh', mesh.running ? 'ON' : 'off'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(BuildContext context, String label, String value) => Column(
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Text(label, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      );
 }
