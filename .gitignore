@@ -11,3 +11,4 @@ android/app/upload-keystore.jks
 *.keystore
 android/.kotlin/
 tools/.tile-key
+assets/tiles/*.mbtiles

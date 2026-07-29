@@ -165,10 +165,23 @@ String? _resolveKey(String? fromFlag) {
 
   final file = File('tools/.tile-key');
   if (file.existsSync()) {
-    final text = file.readAsStringSync().trim();
+    final text = _readKeyBytes(file);
     if (text.isNotEmpty) return text;
   }
   return null;
+}
+
+/// Reads the key without caring how the file got encoded.
+///
+/// PowerShell 5.1's `>` redirect writes UTF-16, `Out-File` defaults to UTF-8
+/// WITH a BOM, and both produce bytes that a plain UTF-8 read either rejects
+/// outright or silently prefixes to the key. Since an API key is always plain
+/// ASCII, keeping only printable ASCII bytes handles UTF-8, UTF-16 either way
+/// round, any BOM, and stray newlines, in one line and with no guessing.
+String _readKeyBytes(File file) {
+  final bytes = file.readAsBytesSync();
+  final printable = bytes.where((b) => b > 0x20 && b < 0x7F).toList();
+  return String.fromCharCodes(printable);
 }
 
 /// Slippy-map tile containing a coordinate at a given zoom.
