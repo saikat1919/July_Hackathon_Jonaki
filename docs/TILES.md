@@ -31,11 +31,34 @@ Choose the area your demo story is set in. Smaller is better: every extra
 square kilometre is APK size, and APK size is what breaks the "judge installs
 in under two minutes" criterion.
 
-## 3. Fetch
+## 3. Set the key
+
+The key is only used to BUILD the basemap. The finished tiles are bundled into
+the APK, so the app never carries the key and neither does the repo.
+
+Best option, keeps it out of your shell history:
+
+```bash
+echo "YOUR_KEY" > tools/.tile-key      # gitignored
+```
+
+Or an environment variable:
+
+```bash
+export TILE_API_KEY=YOUR_KEY
+```
+
+Or pass it directly (it will land in your shell history):
 
 ```bash
 dart run tools/fetch_tiles.dart --key=YOUR_KEY
-dart run tools/fetch_tiles.dart --key=YOUR_KEY --bbox=90.33,23.70,90.50,23.90 --maxzoom=15
+```
+
+## 4. Fetch
+
+```bash
+dart run tools/fetch_tiles.dart
+dart run tools/fetch_tiles.dart --bbox=90.33,23.70,90.50,23.90 --maxzoom=15
 ```
 
 It prints the tile count and estimated size *before* downloading, so an
@@ -45,7 +68,7 @@ Above 60 MB, trim `--maxzoom` or tighten the bbox.
 Zoom guidance: z12 is city-wide context, z16 is individual streets. z12-16 is
 the useful range; z17+ multiplies size for detail nobody needs in this demo.
 
-## 4. Register the asset
+## 5. Register the asset
 
 Add to `pubspec.yaml`:
 
@@ -62,7 +85,7 @@ First launch after installing copies the file out of the asset bundle into app
 documents, because SQLite cannot read from inside the bundle. That costs a few
 seconds once and roughly double the storage.
 
-## 5. Attribution (not optional)
+## 6. Attribution (not optional)
 
 Whatever provider you use, their attribution plus
 `© OpenStreetMap contributors` belongs on the map screen and in the README. You

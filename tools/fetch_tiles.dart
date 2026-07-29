@@ -34,9 +34,12 @@ Future<void> main(List<String> args) async {
     if (m != null) opts[m.group(1)!] = m.group(2)!;
   }
 
-  final key = opts['key'];
+  final key = _resolveKey(opts['key']);
   if (key == null || key.isEmpty) {
-    stderr.writeln('Missing --key=YOUR_PROVIDER_API_KEY');
+    stderr.writeln('No API key found. Any one of these works:');
+    stderr.writeln('  1. put it in tools/.tile-key   (gitignored, recommended)');
+    stderr.writeln(r'  2. export TILE_API_KEY=...');
+    stderr.writeln('  3. dart run tools/fetch_tiles.dart --key=...');
     stderr.writeln('Sign up for a free tier first; see docs/TILES.md.');
     exit(2);
   }
@@ -145,6 +148,27 @@ Future<void> main(List<String> args) async {
   }
   stdout.writeln('Now add this to pubspec.yaml under flutter: assets:');
   stdout.writeln('    - assets/tiles/district.mbtiles');
+}
+
+/// Key lookup order: explicit flag, then environment, then a gitignored file.
+///
+/// The file is the one to prefer: a key passed as a command-line flag lands in
+/// your shell history, and this key is tied to a real account. It is only ever
+/// needed to BUILD the basemap — the finished tiles are bundled into the APK,
+/// so the app itself never carries it and neither does the repo.
+String? _resolveKey(String? fromFlag) {
+  if (fromFlag != null && fromFlag.isNotEmpty) return fromFlag;
+
+  final env = Platform.environment['TILE_API_KEY'] ??
+      Platform.environment['STADIA_API_KEY'];
+  if (env != null && env.isNotEmpty) return env;
+
+  final file = File('tools/.tile-key');
+  if (file.existsSync()) {
+    final text = file.readAsStringSync().trim();
+    if (text.isNotEmpty) return text;
+  }
+  return null;
 }
 
 /// Slippy-map tile containing a coordinate at a given zoom.

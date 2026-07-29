@@ -10,3 +10,4 @@ android/app/upload-keystore.jks
 *.jks
 *.keystore
 android/.kotlin/
+tools/.tile-key
