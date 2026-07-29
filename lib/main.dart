@@ -43,6 +43,8 @@ class _HomeShellState extends State<HomeShell> {
     mesh.addListener(_refresh);
     contacts.addListener(_refresh);
     contacts.load();
+    mesh.keys.load();
+    mesh.keys.addListener(_refresh);
     mesh.bootIdentity();
     // An SOS that needs you to be looking at the right tab is not an alert.
     mesh.incomingSos.listen(_raiseAlert);
@@ -65,6 +67,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     mesh.removeListener(_refresh);
+    mesh.keys.removeListener(_refresh);
     contacts.removeListener(_refresh);
     super.dispose();
   }

@@ -15,7 +15,7 @@ void main() {
         type: EnvelopeType.chat,
         payload: encodePayload({'t': 'road is blocked'}),
       );
-      final m = ChatMessage.fromEnvelope(e, me.fingerprint)!;
+      final m = (await ChatMessage.fromEnvelope(e, me.fingerprint))!;
       expect(m.isBroadcast, isTrue);
       expect(m.to, isNull);
       expect(m.text, 'road is blocked');
@@ -27,7 +27,7 @@ void main() {
         type: EnvelopeType.chat,
         payload: encodePayload({'t': 'meet at the camp', 'to': 'AAAA1111'}),
       );
-      final m = ChatMessage.fromEnvelope(e, me.fingerprint)!;
+      final m = (await ChatMessage.fromEnvelope(e, me.fingerprint))!;
       expect(m.isBroadcast, isFalse);
       expect(m.to, 'AAAA1111');
     });
@@ -41,7 +41,7 @@ void main() {
       relayed.path
         ..add(Uint8List.fromList([1, 1, 1, 1]))
         ..add(Uint8List.fromList([2, 2, 2, 2]));
-      final m = ChatMessage.fromEnvelope(relayed, 'SOMEONEELSE')!;
+      final m = (await ChatMessage.fromEnvelope(relayed, 'SOMEONEELSE'))!;
       expect(m.hops, 2);
       expect(m.mine, isFalse);
     });
@@ -51,7 +51,7 @@ void main() {
         type: EnvelopeType.sos,
         payload: encodePayload({'kind': 'fire'}),
       );
-      expect(ChatMessage.fromEnvelope(sos, me.fingerprint), isNull);
+      expect(await ChatMessage.fromEnvelope(sos, me.fingerprint), isNull);
     });
 
     test('a chat envelope with no text is ignored rather than crashing',
@@ -60,7 +60,7 @@ void main() {
         type: EnvelopeType.chat,
         payload: encodePayload({'nonsense': true}),
       );
-      expect(ChatMessage.fromEnvelope(e, me.fingerprint), isNull);
+      expect(await ChatMessage.fromEnvelope(e, me.fingerprint), isNull);
     });
   });
 

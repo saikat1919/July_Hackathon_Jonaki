@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -9,7 +10,9 @@ import '../gossip/identity.dart';
 import '../store/envelope_store.dart';
 import '../transport/nearby_transport.dart';
 import '../transport/transport.dart';
+import '../gossip/crypto_box.dart';
 import 'chat.dart';
+import 'key_directory.dart';
 import 'report.dart';
 import 'sos.dart';
 
@@ -31,6 +34,9 @@ class MeshService extends ChangeNotifier {
 
   final List<String> log = [];
   final List<Envelope> inbox = [];
+
+  /// Peer keys learned from traffic and then pinned.
+  final KeyDirectory keys = KeyDirectory();
 
   final _sosAlerts = StreamController<Envelope>.broadcast();
 
@@ -85,8 +91,14 @@ class MeshService extends ChangeNotifier {
     );
     final n = GossipNode(identity: identity!, store: s, transport: t);
 
-    n.accepted.listen((e) {
+    n.accepted.listen((e) async {
       inbox.insert(0, e);
+      // Learn keys from ordinary traffic. Hearing one global message from
+      // someone is enough to message them privately afterwards.
+      final trusted = await keys.learnFrom(e);
+      if (!trusted) {
+        _say('KEY CONFLICT from ${e.senderFingerprint} — not trusted');
+      }
       _say('recv ${_label(e)} via ${e.path.length} hops');
       // Someone else's live SOS takes over the screen. Mine does not: I already
       // know, and alerting the sender would bury the cancel button.
@@ -129,22 +141,79 @@ class MeshService extends ChangeNotifier {
     _say('stopped');
   }
 
-  /// [to] is a peer fingerprint, or null to broadcast to everyone nearby.
-  /// Addressing, not privacy: every relay can still read it until X25519 lands.
-  Future<void> sendChat(String text, {String? to}) async {
+  /// Sends a chat message.
+  ///
+  /// [to] null  → GLOBAL: plaintext, readable by everyone the mesh reaches.
+  /// [to] set   → PERSONAL: sealed so only that phone can read the text.
+  ///
+  /// Returns an error string when it refuses to send, null on success. It
+  /// REFUSES rather than falling back to plaintext when the recipient's
+  /// encryption key is unknown: a silent downgrade would turn the privacy
+  /// promise into theatre, and the user would never know.
+  Future<String?> sendChat(String text, {String? to}) async {
     final n = node;
-    if (n == null || text.trim().isEmpty) return;
+    final me = identity;
+    if (n == null || me == null) return 'mesh is not running';
+    if (text.trim().isEmpty) return null;
     if (text.length > maxTextChars) {
-      _say('message too long (${text.length}/$maxTextChars)');
-      return;
+      return 'message too long (${text.length}/$maxTextChars)';
     }
+
+    final myEnc = base64Encode(me.encPublicKey);
+
+    if (to == null) {
+      await n.publish(
+        EnvelopeType.chat,
+        encodePayload({'t': text, 'ek': myEnc}),
+      );
+      _say(peers.isEmpty
+          ? 'queued global (no peers yet)'
+          : 'sent global to ${peers.length} peer(s)');
+      return null;
+    }
+
+    final peerKeys = keys[to];
+    if (peerKeys == null || !peerKeys.canEncrypt) {
+      return 'Cannot encrypt to $to yet — no key received from them. '
+          'Ask them to send a global message first.';
+    }
+
+    final sealed = await CryptoBox.seal(
+      plaintext: text,
+      myKeyPair: me.encKeyPair,
+      theirPublicKey: peerKeys.encryptionKey!,
+      senderFingerprint: fingerprint,
+      recipientFingerprint: to,
+    );
+
     await n.publish(
       EnvelopeType.chat,
-      encodePayload({'t': text, 'to': ?to}),
+      encodePayload({'to': to, 'enc': sealed, 'ek': myEnc}),
     );
     _say(peers.isEmpty
-        ? 'queued (no peers yet) "$text"'
-        : 'sent to ${peers.length} peer(s) "$text"');
+        ? 'queued personal to $to (no peers yet)'
+        : 'sent personal to $to (encrypted)');
+    return null;
+  }
+
+  /// Opens a sealed message. Returns null whenever this phone is not a party to
+  /// it, which is the normal outcome for a relay and must never throw.
+  Future<String?> _decrypt(
+      String sealed, String senderFp, String recipientFp) async {
+    final me = identity;
+    if (me == null) return null;
+    // The counterparty is whichever end of the pair is not me.
+    final peerFp =
+        senderFp.toUpperCase() == fingerprint.toUpperCase() ? recipientFp : senderFp;
+    final peer = keys[peerFp];
+    if (peer == null || !peer.canEncrypt) return null;
+    return CryptoBox.open(
+      sealed: sealed,
+      myKeyPair: me.encKeyPair,
+      theirPublicKey: peer.encryptionKey!,
+      senderFingerprint: senderFp,
+      recipientFingerprint: recipientFp,
+    );
   }
 
   /// Everyone this phone has heard from, whether or not they are in range now.
@@ -153,11 +222,11 @@ class MeshService extends ChangeNotifier {
         for (final e in inbox) e.senderFingerprint,
       }..remove(fingerprint);
 
-  List<ChatMessage> messagesWith(String? peer) {
+  Future<List<ChatMessage>> messagesWith(String? peer) async {
     final me = fingerprint;
     final out = <ChatMessage>[];
     for (final e in inbox) {
-      final m = ChatMessage.fromEnvelope(e, me);
+      final m = await ChatMessage.fromEnvelope(e, me, decrypt: _decrypt);
       if (m != null && m.inThreadWith(peer, me)) out.add(m);
     }
     out.sort((a, b) => a.sentAt.compareTo(b.sentAt));

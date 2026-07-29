@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
@@ -11,24 +12,56 @@ import 'envelope.dart';
 /// or not the sender is a known contact. Rakib must forward for people he has
 /// never met, or there is no mesh. Contacts only supply a display name.
 class Identity {
-  Identity._(this.keyPair, this.publicKey);
+  Identity._(this.keyPair, this.publicKey, this.encKeyPair, this.encPublicKey);
 
+  /// Ed25519. Signs every envelope; its public key IS the user id.
   final SimpleKeyPair keyPair;
   final Uint8List publicKey;
 
+  /// X25519. Used only to encrypt personal messages. Separate curve because
+  /// signing and key agreement are different jobs and sharing one key across
+  /// both is a well-known way to weaken each.
+  final SimpleKeyPair encKeyPair;
+  final Uint8List encPublicKey;
+
   static final _ed25519 = Ed25519();
+  static final _x25519 = X25519();
+  static final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
   static Future<Identity> generate() async {
     final kp = await _ed25519.newKeyPair();
-    final pk = await kp.extractPublicKey();
-    return Identity._(kp, Uint8List.fromList(pk.bytes));
+    return _build(kp, await kp.extractPrivateKeyBytes());
   }
 
   /// Restore from the 32-byte seed held in secure storage (never in SQLite).
   static Future<Identity> fromSeed(List<int> seed) async {
     final kp = await _ed25519.newKeyPairFromSeed(seed);
-    final pk = await kp.extractPublicKey();
-    return Identity._(kp, Uint8List.fromList(pk.bytes));
+    return _build(kp, seed);
+  }
+
+  /// The X25519 keypair is DERIVED from the signing seed rather than generated
+  /// independently, so there is still exactly one secret to back up and lose.
+  /// HKDF with a distinct info string keeps the two keys cryptographically
+  /// unrelated despite the shared origin.
+  static Future<Identity> _build(SimpleKeyPair signing, List<int> seed) async {
+    final signPub = await signing.extractPublicKey();
+
+    final encSeed = await _hkdf.deriveKey(
+      secretKey: SecretKey(seed),
+      nonce: utf8.encode('crisis-mesh-enc-salt-v1'),
+      info: utf8.encode('crisis-mesh-x25519-v1'),
+    );
+    final encKp = await _x25519.newKeyPairFromSeed(
+      await encSeed.extractBytes(),
+    );
+    final encPub = await encKp.extractPublicKey();
+
+    return Identity._(
+      signing,
+      Uint8List.fromList(signPub.bytes),
+      encKp,
+      Uint8List.fromList(encPub.bytes),
+    );
   }
 
   Future<Uint8List> seed() async =>
