@@ -10,6 +10,7 @@ import '../store/envelope_store.dart';
 import '../transport/nearby_transport.dart';
 import '../transport/transport.dart';
 import 'chat.dart';
+import 'report.dart';
 import 'sos.dart';
 
 /// Owns the mesh for the whole app: identity, store, transport, node.
@@ -217,6 +218,62 @@ class MeshService extends ChangeNotifier {
     await n.publish(EnvelopeType.sosCancel, encodePayload({'ref': sosIdHex}));
     _say('CANCELLED SOS (I am safe)');
     notifyListeners();
+  }
+
+  Future<void> publishReport({
+    required ReportKind kind,
+    required double lat,
+    required double lon,
+    String? note,
+  }) async {
+    final n = node;
+    if (n == null) return;
+    await n.publish(
+      EnvelopeType.mapReport,
+      encodePayload(
+          MapReport.toJson(kind: kind, lat: lat, lon: lon, note: note)),
+    );
+    _say('reported ${kind.emoji} ${kind.english}');
+    notifyListeners();
+  }
+
+  /// Confirms someone else's report. The reporter cannot confirm their own, and
+  /// each fingerprint counts once, so confidence means "several people saw it"
+  /// rather than "one person tapped a lot".
+  Future<bool> confirmReport(MapReport report) async {
+    final n = node;
+    if (n == null) return false;
+    if (report.reporter == fingerprint) return false;
+    if (_confirmedByMe.contains(report.id)) return false;
+    _confirmedByMe.add(report.id);
+    await n.publish(
+      EnvelopeType.reportConfirm,
+      encodePayload({'report': report.id}),
+    );
+    // Count my own confirm locally too: the envelope I just published is
+    // addressed to everyone else, and I should see the badge move immediately.
+    await store?.markConfirm(report.id, fingerprint);
+    _say('confirmed ${report.kind.english}');
+    notifyListeners();
+    return true;
+  }
+
+  final Set<String> _confirmedByMe = {};
+
+  bool alreadyConfirmed(MapReport r) =>
+      _confirmedByMe.contains(r.id) || r.reporter == fingerprint;
+
+  /// Live reports with their confirm counts attached.
+  Future<List<MapReport>> reports() async {
+    final s = store;
+    if (s == null) return const [];
+    final out = <MapReport>[];
+    for (final e in inbox) {
+      final r = MapReport.fromEnvelope(e);
+      if (r == null) continue;
+      out.add(r.withConfirms(await s.confirmCount(r.id)));
+    }
+    return out;
   }
 
   /// Live SOS alerts worth showing: not mine, not cancelled by their sender.

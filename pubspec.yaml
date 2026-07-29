@@ -41,6 +41,10 @@ dependencies:
   shared_preferences: ^2.5.5
   geolocator: ^14.0.3
   battery_plus: ^7.1.1
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+  path_provider: ^2.1.6
+  sqflite: ^2.4.3
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +56,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  http: ^1.6.0
+  sqlite3: ^3.5.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app/chat_screen.dart';
 import 'app/contacts.dart';
+import 'app/map_screen.dart';
 import 'app/mesh_service.dart';
 import 'app/sos_screen.dart';
 import 'gossip/envelope.dart';
@@ -71,7 +72,11 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-          title: Text(_tab == 0 ? 'Chat' : 'Mesh · ${mesh.fingerprint}'),
+          title: Text(switch (_tab) {
+            0 => 'Chat',
+            1 => 'Map',
+            _ => 'Mesh · ${mesh.fingerprint}',
+          }),
           actions: [
             // Peer count belongs on every screen: it is the one number that
             // tells you whether anything you send can go anywhere.
@@ -89,14 +94,17 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ],
         ),
-        body: _tab == 0
-            ? ChatScreen(mesh: mesh, contacts: contacts)
-            : MeshScreen(mesh: mesh),
+        body: switch (_tab) {
+          0 => ChatScreen(mesh: mesh, contacts: contacts),
+          1 => MapScreen(mesh: mesh, contacts: contacts),
+          _ => MeshScreen(mesh: mesh),
+        },
         bottomNavigationBar: NavigationBar(
           selectedIndex: _tab,
           onDestinationSelected: (i) => setState(() => _tab = i),
           destinations: const [
             NavigationDestination(icon: Icon(Icons.forum), label: 'Chat'),
+            NavigationDestination(icon: Icon(Icons.map), label: 'Map'),
             NavigationDestination(icon: Icon(Icons.hub), label: 'Mesh'),
           ],
         ),
