@@ -33,6 +33,19 @@ abstract class EnvelopeStore {
   Future<void> markConfirm(String reportIdHex, String confirmerFingerprint);
 
   Future<int> confirmCount(String reportIdHex);
+
+  /// Records an "I'm safe" for an SOS, along with who sent it. A cancelled SOS
+  /// stops being offered even though it has not expired; without this, every
+  /// rehearsal SOS keeps re-offering for two hours and can full-screen a
+  /// judge's phone mid-demo.
+  ///
+  /// [byFingerprint] is stored rather than trusted: only a cancel from the
+  /// original sender counts, or anyone on the mesh could silence someone else's
+  /// call for help. Storing it unverified also handles the out-of-order case
+  /// where the cancel arrives before the SOS it references.
+  Future<void> markCancelled(String sosIdHex, String byFingerprint);
+
+  Future<bool> isCancelledBy(String sosIdHex, String senderFingerprint);
 }
 
 class StoredEnvelope {
@@ -49,6 +62,11 @@ class MemoryEnvelopeStore implements EnvelopeStore {
   /// gossip takes different paths, so a confirm can outrun the thing it confirms.
   /// Dropping orphans would silently under-count on stage.
   final Map<String, Set<String>> _confirms = {};
+
+  /// SOS id -> fingerprint of whoever claimed to cancel it. Kept separately so
+  /// a cancel arriving before its SOS still works, and kept as a claim rather
+  /// than a fact so it can be checked against the real sender.
+  final Map<String, String> _cancelled = {};
 
   @override
   Future<bool> put(Envelope e, {DateTime? now}) async {
@@ -76,6 +94,12 @@ class MemoryEnvelopeStore implements EnvelopeStore {
     for (final s in _byId.values) {
       if (!s.expiresAt.isAfter(t)) continue; // expired: not offered, swept later
       final e = s.envelope;
+      // A cancelled SOS stops travelling immediately, whatever its ttl — but
+      // only if the cancel came from the person who raised it.
+      if (e.type == EnvelopeType.sos &&
+          _cancelled[e.idHex] == e.senderFingerprint) {
+        continue;
+      }
       // ttl bounds forwarding only. At ttl 0 an envelope stays readable but
       // stops being offered — except SOS, which keeps going until it expires.
       if (e.ttl > 0 || e.outlivesTtl) out.add(e);
@@ -112,6 +136,14 @@ class MemoryEnvelopeStore implements EnvelopeStore {
   @override
   Future<int> confirmCount(String reportIdHex) async =>
       _confirms[reportIdHex]?.length ?? 0;
+
+  @override
+  Future<void> markCancelled(String sosIdHex, String byFingerprint) async =>
+      _cancelled[sosIdHex.toUpperCase()] = byFingerprint.toUpperCase();
+
+  @override
+  Future<bool> isCancelledBy(String sosIdHex, String senderFingerprint) async =>
+      _cancelled[sosIdHex.toUpperCase()] == senderFingerprint.toUpperCase();
 
   @override
   Future<DateTime?> expiryOf(String idHex) async => _byId[idHex]?.expiresAt;

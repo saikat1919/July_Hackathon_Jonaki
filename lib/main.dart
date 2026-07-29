@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'app/chat_screen.dart';
 import 'app/contacts.dart';
 import 'app/mesh_service.dart';
+import 'app/sos_screen.dart';
+import 'gossip/envelope.dart';
 
 /// Demo build. The APK handed to judges MUST use a different serviceId, or
 /// their phones advertise into the demo's radio cluster during judging.
@@ -41,6 +43,18 @@ class _HomeShellState extends State<HomeShell> {
     contacts.addListener(_refresh);
     contacts.load();
     mesh.bootIdentity();
+    // An SOS that needs you to be looking at the right tab is not an alert.
+    mesh.incomingSos.listen(_raiseAlert);
+  }
+
+  Future<void> _raiseAlert(Envelope e) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => SosAlertScreen(envelope: e, contacts: contacts),
+      ),
+    );
   }
 
   void _refresh() {
@@ -117,9 +131,8 @@ class MeshScreen extends StatelessWidget {
             ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: mesh.running
-                ? () => mesh.sendSos('medical', 'test from ${mesh.fingerprint}')
-                : null,
+            onPressed:
+                mesh.running ? () => SosSheet.show(context, mesh) : null,
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red.shade700,
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -127,6 +140,14 @@ class MeshScreen extends StatelessWidget {
             icon: const Icon(Icons.emergency_share),
             label: const Text('SOS  ·  জরুরি', style: TextStyle(fontSize: 20)),
           ),
+          if (mesh.mySosIds.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () => mesh.cancelSos(mesh.mySosIds.last),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text("I'm safe — cancel my SOS"),
+            ),
+          ],
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,

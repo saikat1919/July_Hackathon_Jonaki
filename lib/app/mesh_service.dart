@@ -10,6 +10,7 @@ import '../store/envelope_store.dart';
 import '../transport/nearby_transport.dart';
 import '../transport/transport.dart';
 import 'chat.dart';
+import 'sos.dart';
 
 /// Owns the mesh for the whole app: identity, store, transport, node.
 /// The UI reads this and nothing else.
@@ -29,6 +30,12 @@ class MeshService extends ChangeNotifier {
 
   final List<String> log = [];
   final List<Envelope> inbox = [];
+
+  final _sosAlerts = StreamController<Envelope>.broadcast();
+
+  /// Fires when someone else's SOS arrives, so the UI can take over the screen
+  /// regardless of which tab is open.
+  Stream<Envelope> get incomingSos => _sosAlerts.stream;
   bool running = false;
   String? startupError;
 
@@ -80,6 +87,13 @@ class MeshService extends ChangeNotifier {
     n.accepted.listen((e) {
       inbox.insert(0, e);
       _say('recv ${_label(e)} via ${e.path.length} hops');
+      // Someone else's live SOS takes over the screen. Mine does not: I already
+      // know, and alerting the sender would bury the cancel button.
+      if (e.type == EnvelopeType.sos &&
+          e.senderFingerprint != fingerprint &&
+          !_sosAlerts.isClosed) {
+        _sosAlerts.add(e);
+      }
       notifyListeners();
     });
     t.events.listen((e) {
@@ -149,14 +163,73 @@ class MeshService extends ChangeNotifier {
     return out;
   }
 
-  Future<void> sendSos(String kind, String note) async {
+  /// Resolves location and battery, then sends. Location resolution is bounded
+  /// (see [LocationResolver]) so an SOS is never held up waiting on a satellite
+  /// fix that will not arrive indoors.
+  Future<Envelope?> sendSos({
+    required SosKind kind,
+    String? note,
+    double? manualLat,
+    double? manualLon,
+  }) async {
+    final n = node;
+    if (n == null) return null;
+
+    double? lat = manualLat;
+    double? lon = manualLon;
+    var fix = FixSource.manual;
+    Duration? age;
+
+    if (manualLat == null || manualLon == null) {
+      final r = await LocationResolver().resolve();
+      lat = r.lat;
+      lon = r.lon;
+      fix = r.fix;
+      age = r.age;
+    }
+
+    final payload = SosPayload(
+      kind: kind,
+      note: (note == null || note.trim().isEmpty) ? null : note.trim(),
+      lat: lat,
+      lon: lon,
+      fix: fix,
+      fixAge: age,
+      battery: await readBatteryLevel(),
+    );
+
+    final e = await n.publish(EnvelopeType.sos, encodePayload(payload.toJson()));
+    mySosIds.add(e.idHex);
+    _say('SENT SOS ${kind.emoji} ${kind.english} · ${payload.locationLabel}');
+    notifyListeners();
+    return e;
+  }
+
+  /// SOS ids raised by this phone, so the UI can offer "I'm safe" only for
+  /// alerts you actually raised.
+  final Set<String> mySosIds = {};
+
+  /// "I'm safe". Stops the SOS being re-offered across the mesh even though it
+  /// has not expired. Only the original sender's cancel is honoured.
+  Future<void> cancelSos(String sosIdHex) async {
     final n = node;
     if (n == null) return;
-    await n.publish(
-      EnvelopeType.sos,
-      encodePayload({'kind': kind, 'note': note}),
-    );
-    _say('SENT SOS ($kind)');
+    await n.publish(EnvelopeType.sosCancel, encodePayload({'ref': sosIdHex}));
+    _say('CANCELLED SOS (I am safe)');
+    notifyListeners();
+  }
+
+  /// Live SOS alerts worth showing: not mine, not cancelled by their sender.
+  Future<List<Envelope>> activeSosAlerts() async {
+    final s = store;
+    if (s == null) return const [];
+    final out = <Envelope>[];
+    for (final e in inbox) {
+      if (e.type != EnvelopeType.sos) continue;
+      if (await s.isCancelledBy(e.idHex, e.senderFingerprint)) continue;
+      out.add(e);
+    }
+    return out;
   }
 
   /// Queues 50 chat messages so the SOS visibly jumps the line on stage. With

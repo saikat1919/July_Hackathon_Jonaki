@@ -185,12 +185,22 @@ class GossipNode {
   Future<void> _accept(Envelope e, {required bool local, String? from}) async {
     final fresh = await store.put(e, now: _clock());
     if (!fresh) return; // dedup by id: already seen, no re-store, no re-relay
-    if (e.type == EnvelopeType.reportConfirm) {
-      final p = decodePayload(e.payload);
-      final reportId = p['report'] as String?;
-      if (reportId != null) {
-        await store.markConfirm(reportId, e.senderFingerprint);
-      }
+    switch (e.type) {
+      case EnvelopeType.reportConfirm:
+        final reportId = decodePayload(e.payload)['report'] as String?;
+        if (reportId != null) {
+          await store.markConfirm(reportId, e.senderFingerprint);
+        }
+      case EnvelopeType.sosCancel:
+        // Recorded as a claim. The store only honours it if the fingerprint
+        // matches the SOS's real sender, so nobody can silence another
+        // person's call for help.
+        final ref = decodePayload(e.payload)['ref'] as String?;
+        if (ref != null) {
+          await store.markCancelled(ref, e.senderFingerprint);
+        }
+      default:
+        break;
     }
     if (!_accepted.isClosed) _accepted.add(e);
     if (!local) {
