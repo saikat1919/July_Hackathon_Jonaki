@@ -70,6 +70,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    # Offline basemap. Generated, not committed: see docs/TILES.md to rebuild.
+    # Copied out of the bundle into app documents on first launch, because
+    # SQLite cannot read from inside an asset bundle.
+    - assets/tiles/district.mbtiles
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

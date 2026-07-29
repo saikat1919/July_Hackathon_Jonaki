@@ -110,6 +110,26 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
         ),
+        // Required by the tile provider's terms, and the right thing to do
+        // regardless: this basemap is other people's work.
+        if (tiles != null)
+          Positioned(
+            right: 4,
+            bottom: 4,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  '© Stadia Maps © OpenMapTiles © OpenStreetMap',
+                  style: TextStyle(fontSize: 9, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
