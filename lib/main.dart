@@ -148,21 +148,9 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ],
         ),
-        // SOS must be reachable from wherever the user happens to be. Burying
-        // the emergency feature behind a tab is not a thing to do in a crisis
-        // app.
-        floatingActionButton: _booting
-            ? null
-            : FloatingActionButton.extended(
-                onPressed: mesh.running
-                    ? () => SosSheet.show(context, mesh)
-                    : null,
-                backgroundColor: Colors.red.shade700,
-                foregroundColor: Colors.white,
-                icon: const Icon(Icons.emergency_share),
-                label: const Text('SOS',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
+        // No floating SOS button: it sat on top of the chat send button.
+        // SOS lives on its own tab instead, which keeps it one tap away
+        // without covering anything.
         body: _booting
             ? const Center(child: CircularProgressIndicator())
             : Column(
