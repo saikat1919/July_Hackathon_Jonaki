@@ -26,6 +26,11 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // Which runtime permissions even EXIST depends on the OS
+                    // version. Asking for an Android 13 permission on Android
+                    // 11 yields a permission that can never be granted, so the
+                    // app would wait forever for something impossible.
+                    "sdkInt" -> result.success(android.os.Build.VERSION.SDK_INT)
                     "isBluetoothOn" -> result.success(isBluetoothOn())
                     "requestBluetoothOn" -> {
                         if (isBluetoothOn()) {

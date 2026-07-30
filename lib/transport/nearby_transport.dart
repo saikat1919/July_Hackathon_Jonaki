@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/services.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -244,28 +244,58 @@ class NearbyTransport implements Transport {
 
   String? fingerprintOf(String endpointId) => _fingerprints[endpointId];
 
-  /// Permissions Nearby needs on Android 12+/13+. The plugin does not request
-  /// these; the app must. Miss any one and discovery fails silently, which on
-  /// stage reads as "the mesh is broken" rather than "a checkbox is off".
+  /// The runtime permissions that exist on a given Android version.
   ///
-  /// Location in particular is non-obvious: Nearby needs it even though the app
-  /// never asks where you are, and without it connections thrash.
-  static const List<Permission> required = [
-    Permission.bluetoothScan, // Android 12+
-    Permission.bluetoothAdvertise, // Android 12+
-    Permission.bluetoothConnect, // Android 12+
-    Permission.nearbyWifiDevices, // Android 13+
-    Permission.locationWhenInUse, // Nearby requires it regardless
-    Permission.notification, // Android 13+, for the foreground service
-  ];
+  /// This is version-dependent, and getting it wrong is not a cosmetic bug: a
+  /// permission introduced in Android 13 can never be granted on Android 11,
+  /// so requesting it unconditionally leaves the app permanently waiting for
+  /// something impossible. Observed on a real Android 11 device reporting
+  /// nearbyWifiDevices missing with every permission already granted.
+  ///
+  /// Below API 31 the Bluetooth permissions are install-time normal
+  /// permissions (BLUETOOTH / BLUETOOTH_ADMIN in the manifest), so there is
+  /// nothing to request at runtime. Location is the one constant: Nearby needs
+  /// it on every version even though this app never asks where you are.
+  ///
+  /// Pure function of the SDK level so it can be tested without a device.
+  static List<Permission> permissionsFor(int sdkInt) => [
+        Permission.locationWhenInUse,
+        if (sdkInt >= 31) ...[
+          Permission.bluetoothScan,
+          Permission.bluetoothAdvertise,
+          Permission.bluetoothConnect,
+        ],
+        if (sdkInt >= 33) ...[
+          Permission.nearbyWifiDevices,
+          Permission.notification,
+        ],
+      ];
 
   /// Returns the permissions still missing after asking. Empty means ready.
-  static Future<List<Permission>> ensurePermissions() async {
-    final results = await required.request();
+  static Future<List<Permission>> ensurePermissions({int? sdkInt}) async {
+    final sdk = sdkInt ?? await androidSdkInt();
+    final results = await permissionsFor(sdk).request();
     return results.entries
         .where((e) => !e.value.isGranted)
         .map((e) => e.key)
         .toList();
+  }
+
+  static int? _cachedSdk;
+
+  /// Android API level. Cached: it cannot change while the app is running.
+  static Future<int> androidSdkInt() async {
+    if (_cachedSdk != null) return _cachedSdk!;
+    try {
+      _cachedSdk = await const MethodChannel('crisis_mesh/radio')
+              .invokeMethod<int>('sdkInt') ??
+          31;
+    } catch (_) {
+      // Channel unavailable (tests, or a host without the native side).
+      // Assume 31: asks for the Android 12 set, skips the 13-only ones.
+      _cachedSdk = 31;
+    }
+    return _cachedSdk!;
   }
 
   /// Nearby also needs Location SERVICES on, not just the permission granted.
