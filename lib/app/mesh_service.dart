@@ -470,26 +470,14 @@ class MeshService extends ChangeNotifier {
     _say('queued 50 chat messages');
   }
 
-  /// Demo presets. `chain` proves multi-hop is real; `mule-pairs` sets up two
-  /// isolated groups for the carry. Reconfiguring four allowlists by hand
-  /// mid-demo does not fit in a three minute run.
-  void applyPreset(String name, List<String> fingerprints) {
-    final t = transport;
-    if (t == null) return;
-    t.lock
-      ..allow(fingerprints)
-      ..enabled = true;
-    _say('topology "$name": ${fingerprints.join(", ")}');
+  /// Drops everything past its expiry. Runs on boot; exposed here so a stale
+  /// rehearsal SOS can be cleared without waiting out its two hours.
+  Future<void> sweepNow() async {
+    final n = await store?.sweepExpired() ?? 0;
+    inbox.removeWhere((e) => e.remaining <= Duration.zero);
+    _say('swept $n expired');
     notifyListeners();
   }
-
-  void unlockTopology() {
-    transport?.lock.clear();
-    _say('topology lock OFF (ship state)');
-    notifyListeners();
-  }
-
-  bool get locked => transport?.lock.enabled ?? false;
 
   String _label(Envelope e) {
     final t = e.type;

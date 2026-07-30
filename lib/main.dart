@@ -10,9 +10,26 @@ import 'app/readiness_card.dart';
 import 'app/sos_screen.dart';
 import 'gossip/envelope.dart';
 
-/// Demo build. The APK handed to judges MUST use a different serviceId, or
-/// their phones advertise into the demo's radio cluster during judging.
-const String kServiceId = 'bd.july.crisis_mesh.demo';
+/// Which radio network this build joins.
+///
+/// The APK handed to judges MUST NOT share a serviceId with the demo phones.
+/// Judges install during judging, their phones start advertising, and suddenly
+/// the demo is running in a cluster of six or eight advertisers — which is the
+/// top known Nearby failure mode, arriving at the worst possible moment.
+///
+///   flutter build apk --release --split-per-abi
+///       → public build, what judges install
+///   flutter build apk --release --split-per-abi --dart-define=DEMO_BUILD=true
+///       → demo build, invisible to the public one
+///
+/// Public is the DEFAULT on purpose: forgetting the flag gives judges a
+/// correct APK, whereas the reverse would put them in your cluster. The Mesh
+/// tab shows which variant is installed, so it is checkable at a glance rather
+/// than a thing you have to remember.
+const bool kDemoBuild = bool.fromEnvironment('DEMO_BUILD');
+
+const String kServiceId =
+    kDemoBuild ? 'bd.july.crisis_mesh.demo' : 'bd.july.crisis_mesh';
 
 void main() => runApp(const CrisisMeshApp());
 
@@ -159,6 +176,11 @@ class _HomeShellState extends State<HomeShell> {
                     blockers: _blockers,
                     onFixed: _startWhenReady,
                   ),
+                  if (mesh.keys.conflicts.isNotEmpty)
+                    _KeyConflictBanner(
+                      fingerprints: mesh.keys.conflicts,
+                      contacts: contacts,
+                    ),
                   Expanded(
                     child: switch (_tab) {
                       0 => ChatScreen(mesh: mesh, contacts: contacts),
@@ -180,6 +202,54 @@ class _HomeShellState extends State<HomeShell> {
       );
 }
 
+/// Someone sent a key that clashes with one already pinned for that ID.
+///
+/// That is either a rare fingerprint collision or somebody trying to take over
+/// a conversation. The app already refuses the new key; this makes the refusal
+/// visible, because a silent security event is not much of a security feature.
+class _KeyConflictBanner extends StatelessWidget {
+  const _KeyConflictBanner({
+    required this.fingerprints,
+    required this.contacts,
+  });
+
+  final Set<String> fingerprints;
+  final Contacts contacts;
+
+  @override
+  Widget build(BuildContext context) {
+    final names = fingerprints.map(contacts.nameFor).join(', ');
+    return Card(
+      color: Theme.of(context).colorScheme.errorContainer,
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            const Icon(Icons.gpp_maybe, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Identity conflict',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Someone claiming to be $names sent a different key. '
+                    'The original is still trusted and the new one was '
+                    'refused. Treat messages from them with suspicion.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Diagnostics and demo controls. This is the screen the day-2 gate runs on.
 class MeshScreen extends StatelessWidget {
   const MeshScreen({super.key, required this.mesh});
@@ -194,6 +264,26 @@ class MeshScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Which build this is, stated plainly. Two APKs that look identical
+          // but cannot see each other is exactly the kind of confusion that
+          // eats twenty minutes on demo day.
+          Card(
+            color: kDemoBuild
+                ? Theme.of(context).colorScheme.tertiaryContainer
+                : null,
+            child: ListTile(
+              dense: true,
+              leading: Icon(kDemoBuild ? Icons.science : Icons.public),
+              title: Text(kDemoBuild ? 'DEMO build' : 'Public build'),
+              subtitle: Text(
+                kDemoBuild
+                    ? 'Only sees other demo builds. Not for judges.'
+                    : 'The build to distribute. Sees other public builds.',
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           _StatusStrip(mesh: mesh),
           if (err != null)
             Padding(
@@ -234,8 +324,8 @@ class MeshScreen extends StatelessWidget {
                 child: const Text('queue 50 chat'),
               ),
               OutlinedButton(
-                onPressed: mesh.running ? mesh.unlockTopology : null,
-                child: Text(mesh.locked ? 'unlock topology' : 'lock: OFF'),
+                onPressed: mesh.running ? mesh.sweepNow : null,
+                child: const Text('sweep expired'),
               ),
             ],
           ),

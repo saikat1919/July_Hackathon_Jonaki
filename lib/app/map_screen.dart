@@ -156,9 +156,22 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
-    if (kind == null) return;
-    await widget.mesh
-        .publishReport(kind: kind, lat: at.latitude, lon: at.longitude);
+    if (kind == null || !mounted) return;
+
+    // Optional detail. "Road blocked" is useful; "road blocked, tree down,
+    // passable on foot" is actionable.
+    final note = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _NoteDialog(kind: kind),
+    );
+    if (note == null) return; // cancelled
+
+    await widget.mesh.publishReport(
+      kind: kind,
+      lat: at.latitude,
+      lon: at.longitude,
+      note: note.isEmpty ? null : note,
+    );
     await _refreshReports();
   }
 
@@ -231,6 +244,65 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
+}
+
+class _NoteDialog extends StatefulWidget {
+  const _NoteDialog({required this.kind});
+
+  final ReportKind kind;
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Row(
+          children: [
+            Text(widget.kind.emoji, style: const TextStyle(fontSize: 26)),
+            const SizedBox(width: 10),
+            Expanded(child: Text(widget.kind.english)),
+          ],
+        ),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          maxLength: 200,
+          maxLines: 2,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Add a detail (optional)',
+            hintText: 'e.g. passable on foot only',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          // Skipping must be one tap: a frightened person marking a danger
+          // zone should not be forced to write prose.
+          TextButton(
+            onPressed: () => Navigator.pop(context, ''),
+            child: const Text('No detail'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _controller.text),
+            child: const Text('Report'),
+          ),
+        ],
+      );
 }
 
 class _Pin extends StatelessWidget {

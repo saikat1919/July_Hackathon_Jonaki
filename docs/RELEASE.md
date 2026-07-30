@@ -32,11 +32,35 @@ Then write `android/key.properties` with `storePassword`, `keyPassword`,
 every judge who already installed has to uninstall first — Android refuses an
 update signed by a different key.
 
-## Build
+## Two builds, and they must not see each other
+
+Judges install the APK **during** judging. Their phones then start advertising,
+and your demo suddenly runs inside a cluster of six or eight advertisers, which
+is the top known Nearby failure mode arriving at the worst possible moment.
+
+So the demo phones and the distributed APK use different `serviceId`s and are
+invisible to each other at the discovery layer.
 
 ```bash
+# PUBLIC — what judges install. This is the default.
 flutter build apk --release --split-per-abi
+
+# DEMO — your phones only.
+flutter build apk --release --split-per-abi --dart-define=DEMO_BUILD=true
 ```
+
+Public is the default deliberately: forgetting the flag gives judges a correct
+APK, whereas the reverse would drop them straight into your cluster.
+
+The Mesh tab states which variant is installed, so it is checkable at a glance
+rather than something you have to remember. Verify a built APK directly with:
+
+```bash
+unzip -p app-arm64-v8a-release.apk lib/arm64-v8a/libapp.so | grep -c crisis_mesh.demo
+# 1 = demo build, 0 = public build
+```
+
+## Build
 
 Always `--split-per-abi`. Measured on the day-1 harness:
 
