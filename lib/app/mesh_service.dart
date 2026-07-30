@@ -243,9 +243,29 @@ class MeshService extends ChangeNotifier {
 
   /// Everyone this phone has heard from, whether or not they are in range now.
   /// A peer who walked away still has a thread; the mesh will deliver later.
-  Set<String> get knownFingerprints => {
-        for (final e in inbox) e.senderFingerprint,
-      }..remove(fingerprint);
+  /// Everyone worth offering a personal thread with.
+  ///
+  /// Three sources, because any one alone leaves the feature looking broken:
+  /// peers connected right now (so a thread appears the moment someone is in
+  /// range, before they have said anything), everyone who has ever messaged
+  /// us, and every key we have pinned (so threads survive a restart).
+  Set<String> get knownFingerprints {
+    final out = <String>{};
+    final t = transport;
+    if (t != null) {
+      for (final peerId in t.connectedPeers) {
+        final fp = t.fingerprintOf(peerId);
+        if (fp != null) out.add(fp.toUpperCase());
+      }
+    }
+    for (final e in inbox) {
+      out.add(e.senderFingerprint.toUpperCase());
+    }
+    for (final k in keys.all) {
+      out.add(k.fingerprint.toUpperCase());
+    }
+    return out..remove(fingerprint.toUpperCase());
+  }
 
   Future<List<ChatMessage>> messagesWith(String? peer) async {
     final me = fingerprint;

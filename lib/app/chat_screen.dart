@@ -83,10 +83,17 @@ class _ChatScreenState extends State<ChatScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: _peer == null
-              ? const Text(
-                  'Global — everyone the mesh reaches, including through hops. '
-                  'Not encrypted.',
-                  style: TextStyle(fontSize: 11),
+              ? Text(
+                  known.isEmpty
+                      // Without this line the feature is invisible: there is no
+                      // way to tell "nobody to talk to yet" from "not built".
+                      ? 'Global — everyone the mesh reaches, including through '
+                          'hops. Not encrypted.\n'
+                          'Personal chats appear as chips above once someone '
+                          'is nearby or messages you.'
+                      : 'Global — everyone the mesh reaches, including through '
+                          'hops. Not encrypted.',
+                  style: const TextStyle(fontSize: 11),
                 )
               : Row(
                   children: [
