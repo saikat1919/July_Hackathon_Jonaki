@@ -31,12 +31,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- SMS gateway: bridges feature phones into the mesh. Sideloaded app, so
-         the Play Store SMS policy does not apply. -->
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
-    <uses-permission android:name="android.permission.SEND_SMS" />
-
     <application
         android:label="Jonaki"
         android:name="${applicationName}"

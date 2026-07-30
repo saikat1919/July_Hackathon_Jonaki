@@ -308,21 +308,10 @@ class _SosAlertScreenState extends State<SosAlertScreen> {
                       fontSize: 30, fontWeight: FontWeight.bold)),
               Text(sos.kind.bangla, style: const TextStyle(fontSize: 20)),
               const SizedBox(height: 16),
-              if (sos.isFromSms)
-                // A feature phone cannot sign anything, so this envelope was
-                // signed by the gateway that relayed it. Saying "verified"
-                // here without qualification would be a lie about who is
-                // vouching for what.
-                _row(Icons.sms, 'Sent by SMS from ${sos.smsOrigin}',
-                    sub: 'relayed by $sender · the phone that texted could '
-                        'not sign it, so the sender is not cryptographically '
-                        'verified')
-              else ...[
-                _row(Icons.person, sender, sub: idLine),
-                // Signature is the real trust claim, so it gets said plainly.
-                _row(Icons.verified_user, 'Signature verified',
-                    sub: 'this message was not altered in transit'),
-              ],
+              _row(Icons.person, sender, sub: idLine),
+              // Signature is the real trust claim, so it gets said plainly.
+              _row(Icons.verified_user, 'Signature verified',
+                  sub: 'this message was not altered in transit'),
               _row(Icons.place, sos.locationLabel),
               if (sos.note != null && sos.note!.isNotEmpty)
                 _row(Icons.sticky_note_2, sos.note!),
