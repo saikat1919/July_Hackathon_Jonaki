@@ -38,7 +38,7 @@ class CrisisMeshApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        title: 'Crisis Mesh',
+        title: 'Jonaki',
         debugShowCheckedModeBanner: false,
         theme: ThemeData.dark(useMaterial3: true),
         home: const HomeShell(),
@@ -137,11 +137,24 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-          title: Text(switch (_tab) {
-            0 => 'Chat',
-            1 => 'Map',
-            _ => 'Mesh · ${mesh.fingerprint}',
-          }),
+          // Long-press the title for diagnostics. Kept out of the way rather
+          // than deleted: still needed for rehearsal, but a scrolling debug
+          // log is not what a judge should find in a crisis app.
+          title: GestureDetector(
+            onLongPress: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: Text('Diagnostics · ${mesh.fingerprint}')),
+                  body: MeshScreen(mesh: mesh),
+                ),
+              ),
+            ),
+            child: Text(switch (_tab) {
+              0 => 'Jonaki · Chat',
+              1 => 'Jonaki · Map',
+              _ => 'Jonaki · SOS',
+            }),
+          ),
           actions: [
             // Peer count belongs on every screen: it is the one number that
             // tells you whether anything you send can go anywhere.
@@ -185,7 +198,7 @@ class _HomeShellState extends State<HomeShell> {
                     child: switch (_tab) {
                       0 => ChatScreen(mesh: mesh, contacts: contacts),
                       1 => MapScreen(mesh: mesh, contacts: contacts),
-                      _ => MeshScreen(mesh: mesh),
+                      _ => SosTab(mesh: mesh, contacts: contacts),
                     },
                   ),
                 ],
@@ -196,7 +209,9 @@ class _HomeShellState extends State<HomeShell> {
           destinations: const [
             NavigationDestination(icon: Icon(Icons.forum), label: 'Chat'),
             NavigationDestination(icon: Icon(Icons.map), label: 'Map'),
-            NavigationDestination(icon: Icon(Icons.hub), label: 'Mesh'),
+            NavigationDestination(
+                icon: Icon(Icons.emergency_share, color: Colors.redAccent),
+                label: 'SOS'),
           ],
         ),
       );

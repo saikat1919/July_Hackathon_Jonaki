@@ -120,6 +120,129 @@ class _SosSheetState extends State<SosSheet> {
       );
 }
 
+/// The SOS tab. Raise one, cancel your own, and see what is live nearby.
+/// Deliberately sparse: this is the screen someone opens in a bad moment.
+class SosTab extends StatefulWidget {
+  const SosTab({super.key, required this.mesh, required this.contacts});
+
+  final MeshService mesh;
+  final Contacts contacts;
+
+  @override
+  State<SosTab> createState() => _SosTabState();
+}
+
+class _SosTabState extends State<SosTab> {
+  List<Envelope> _alerts = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    widget.mesh.addListener(_reload);
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    widget.mesh.removeListener(_reload);
+    super.dispose();
+  }
+
+  Future<void> _reload() async {
+    final a = await widget.mesh.activeSosAlerts();
+    if (mounted) setState(() => _alerts = a);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mesh = widget.mesh;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            onPressed:
+                mesh.running ? () => SosSheet.show(context, mesh) : null,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 28),
+            ),
+            icon: const Icon(Icons.emergency_share, size: 30),
+            label: const Text('SOS  ·  জরুরি',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            mesh.running
+                ? 'Sends your location, the type of emergency and your battery '
+                    'level to every phone the mesh can reach. Relayed ahead of '
+                    'all other traffic.'
+                : 'The mesh is not running yet.',
+            style: Theme.of(context).textTheme.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          if (mesh.mySosIds.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: () async {
+                await mesh.cancelSos(mesh.mySosIds.last);
+                await _reload();
+              },
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text("I'm safe now — cancel my SOS"),
+            ),
+          ],
+          const Divider(height: 32),
+          Text('Alerts nearby',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _alerts.isEmpty
+                ? const Center(
+                    child: Text('No one nearby has called for help.'))
+                : ListView.builder(
+                    itemCount: _alerts.length,
+                    itemBuilder: (_, i) {
+                      final e = _alerts[i];
+                      final sos = SosPayload.fromJson(decodePayload(e.payload));
+                      final fp = e.senderFingerprint;
+                      return Card(
+                        color: Colors.red.shade900,
+                        child: ListTile(
+                          leading: Text(sos.kind.emoji,
+                              style: const TextStyle(fontSize: 28)),
+                          title: Text(
+                            '${sos.kind.english} · '
+                            '${widget.contacts.isAnonymous(fp) ? 'Name unknown' : widget.contacts.nameFor(fp)}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          // ID always visible: it is the part that cannot be
+                          // faked, and it is how you tell two people apart.
+                          subtitle: Text('ID $fp · ${sos.locationLabel}',
+                              style: const TextStyle(fontSize: 11)),
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => SosAlertScreen(
+                                  envelope: e, contacts: widget.contacts),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Full-screen takeover for an incoming SOS. It should be impossible to miss
 /// and impossible to misread: who, what, where, how stale, how it reached you.
 class SosAlertScreen extends StatefulWidget {
@@ -157,8 +280,19 @@ class _SosAlertScreenState extends State<SosAlertScreen> {
   Widget build(BuildContext context) {
     final e = widget.envelope;
     final sos = SosPayload.fromJson(decodePayload(e.payload));
-    final sender = widget.contacts.nameFor(e.senderFingerprint);
-    final known = widget.contacts.isKnown(e.senderFingerprint);
+    final fp = e.senderFingerprint;
+    final contacts = widget.contacts;
+    // Whoever is in danger, say who as loudly as the data allows. The ID is
+    // ALWAYS shown alongside the name: it is the part that cannot be faked,
+    // and a rescuer comparing it against a contact list needs to see it.
+    final anonymous = contacts.isAnonymous(fp);
+    final selfDeclared = contacts.isSelfDeclared(fp);
+    final sender = anonymous ? 'Name unknown' : contacts.nameFor(fp);
+    final idLine = selfDeclared
+        ? 'ID $fp · name they gave themselves'
+        : anonymous
+            ? 'ID $fp · nobody has named this person yet'
+            : 'ID $fp';
 
     return Scaffold(
       backgroundColor: Colors.red.shade900,
@@ -174,8 +308,7 @@ class _SosAlertScreenState extends State<SosAlertScreen> {
                       fontSize: 30, fontWeight: FontWeight.bold)),
               Text(sos.kind.bangla, style: const TextStyle(fontSize: 20)),
               const SizedBox(height: 16),
-              _row(Icons.person, known ? sender : 'Unknown sender',
-                  sub: known ? e.senderFingerprint : 'ID ${e.senderFingerprint}'),
+              _row(Icons.person, sender, sub: idLine),
               // Signature is the real trust claim, so it gets said plainly.
               _row(Icons.verified_user, 'Signature verified',
                   sub: 'this message was not altered in transit'),

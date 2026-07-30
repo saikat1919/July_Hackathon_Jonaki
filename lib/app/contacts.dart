@@ -48,8 +48,23 @@ class Contacts extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// True only for a name the user typed themselves.
   bool isKnown(String fingerprint) =>
       _names.containsKey(fingerprint.toUpperCase());
+
+  /// True when the only name we have is the one that peer claimed for
+  /// themselves. Worth distinguishing on an SOS screen: "Niloy" you labelled is
+  /// a stronger claim than "Niloy" someone typed into their own phone.
+  bool isSelfDeclared(String fingerprint) {
+    final fp = fingerprint.toUpperCase();
+    return !_names.containsKey(fp) && _announced.containsKey(fp);
+  }
+
+  /// True when we have no name at all and can only show the ID.
+  bool isAnonymous(String fingerprint) {
+    final fp = fingerprint.toUpperCase();
+    return !_names.containsKey(fp) && !_announced.containsKey(fp);
+  }
 
   Future<void> setName(String fingerprint, String name) async {
     final fp = fingerprint.toUpperCase();
