@@ -38,12 +38,51 @@ void main() {
       expect(MapReport.fromEnvelope(e), isNull);
     });
 
-    test('an unknown kind falls back to danger rather than vanishing', () async {
+    test('an unknown kind falls back to "something else", not danger',
+        () async {
+      // Painting an unexplained hazard on the map would route people around
+      // something that may be a pharmacy.
       final e = await me.compose(
         type: EnvelopeType.mapReport,
-        payload: encodePayload({'kind': 'alien-landing', 'lat': 1.0, 'lon': 2.0}),
+        payload: encodePayload({'kind': 'boat-crossing', 'lat': 1.0, 'lon': 2.0}),
       );
-      expect(MapReport.fromEnvelope(e)!.kind, ReportKind.danger);
+      expect(MapReport.fromEnvelope(e)!.kind, ReportKind.other);
+    });
+
+    test('a custom report leads with the reporter\'s words', () async {
+      final e = await me.compose(
+        type: EnvelopeType.mapReport,
+        payload: encodePayload(MapReport.toJson(
+          kind: ReportKind.other,
+          lat: 23.81,
+          lon: 90.41,
+          note: 'power line down across the road',
+        )),
+      );
+      final r = MapReport.fromEnvelope(e)!;
+      expect(r.headline, 'power line down across the road');
+
+      final known = await report(ReportKind.shelter, note: 'school building');
+      expect(MapReport.fromEnvelope(known)!.headline, 'Shelter',
+          reason: 'a known type leads with its label');
+    });
+
+    test('a custom report with no note still renders a label, never blank',
+        () async {
+      // The UI refuses to create this, but a malformed one could arrive over
+      // the mesh.
+      final e = await me.compose(
+        type: EnvelopeType.mapReport,
+        payload: encodePayload({'kind': 'other', 'lat': 1.0, 'lon': 2.0}),
+      );
+      expect(MapReport.fromEnvelope(e)!.headline, 'Something else');
+    });
+
+    test('only the custom type requires a note', () {
+      expect(ReportKind.other.needsNote, isTrue);
+      for (final k in ReportKind.values.where((k) => k != ReportKind.other)) {
+        expect(k.needsNote, isFalse, reason: k.english);
+      }
     });
 
     test('a non-report envelope is not a report', () async {

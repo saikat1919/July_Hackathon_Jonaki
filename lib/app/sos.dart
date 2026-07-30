@@ -9,7 +9,13 @@ enum SosKind {
   violence('violence', '⚠️', 'Violence', 'সহিংসতা'),
   fire('fire', '🔥', 'Fire', 'আগুন'),
   flood('flood', '💧', 'Flood', 'বন্যা'),
-  missing('missing', '🔎', 'Missing person', 'নিখোঁজ');
+  missing('missing', '🔎', 'Missing person', 'নিখোঁজ'),
+
+  /// Anything the five boxes do not cover: trapped under rubble, electrocution,
+  /// childbirth, a collapsed building. Real emergencies do not arrive in
+  /// categories, and forcing one into "Medical" tells a responder something
+  /// untrue. Requires a description — see [needsNote].
+  other('other', '❗', 'Something else', 'অন্য কিছু');
 
   const SosKind(this.wire, this.emoji, this.english, this.bangla);
 
@@ -18,9 +24,15 @@ enum SosKind {
   final String english;
   final String bangla;
 
+  /// "Other" alone conveys nothing, so the note stops being optional.
+  bool get needsNote => this == SosKind.other;
+
+  /// Unknown values map to [other], not to medical. An older build receiving a
+  /// type added in a newer one should say "something else, here is what they
+  /// wrote" rather than inventing a medical emergency.
   static SosKind fromWire(String? s) => SosKind.values.firstWhere(
         (k) => k.wire == s,
-        orElse: () => SosKind.medical,
+        orElse: () => SosKind.other,
       );
 }
 
@@ -63,6 +75,13 @@ class SosPayload {
   final int? battery;
 
   bool get hasLocation => lat != null && lon != null;
+
+  /// What to put in front of a responder as the headline. For a custom SOS the
+  /// person's own words ARE the emergency, so they lead instead of the label.
+  String get headline {
+    if (kind == SosKind.other && note != null && note!.isNotEmpty) return note!;
+    return kind.english;
+  }
 
   Map<String, Object?> toJson() => {
         'kind': kind.wire,

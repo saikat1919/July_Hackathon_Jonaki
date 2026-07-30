@@ -40,8 +40,17 @@ class _SosSheetState extends State<SosSheet> {
     super.dispose();
   }
 
+  /// A custom SOS with no description is not actionable, so it cannot be sent.
+  /// Every other type is fine without one — the icon already says enough.
+  bool get _ready {
+    final k = _kind;
+    if (k == null) return false;
+    if (k.needsNote && _note.text.trim().isEmpty) return false;
+    return true;
+  }
+
   Future<void> _send() async {
-    if (_kind == null || _sending) return;
+    if (!_ready || _sending) return;
     setState(() => _sending = true);
     await HapticFeedback.heavyImpact();
     await widget.mesh.sendSos(kind: _kind!, note: _note.text);
@@ -51,12 +60,16 @@ class _SosSheetState extends State<SosSheet> {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('What is happening?',
-                style: Theme.of(context).textTheme.titleLarge),
+        // Scrollable so nothing is ever clipped: six type buttons plus the
+        // note field plus the keyboard already overflow a short screen, and a
+        // send button you cannot reach is the worst possible failure here.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('What is happening?',
+                  style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             // Big targets. Under stress, small buttons get mis-tapped.
             for (final k in SosKind.values)
@@ -84,16 +97,22 @@ class _SosSheetState extends State<SosSheet> {
             TextField(
               controller: _note,
               maxLength: 200,
-              decoration: const InputDecoration(
-                labelText: 'Note (optional)',
-                hintText: 'e.g. second floor, water rising',
-                border: OutlineInputBorder(),
+              autofocus: _kind?.needsNote ?? false,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: (_kind?.needsNote ?? false)
+                    ? 'What is happening? (required)'
+                    : 'Note (optional)',
+                hintText: (_kind?.needsNote ?? false)
+                    ? 'e.g. trapped under rubble, two people'
+                    : 'e.g. second floor, water rising',
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
             ),
             const SizedBox(height: 8),
             FilledButton.icon(
-              onPressed: _kind == null || _sending ? null : _send,
+              onPressed: !_ready || _sending ? null : _send,
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.red.shade700,
                 padding: const EdgeInsets.symmetric(vertical: 18),
@@ -108,6 +127,15 @@ class _SosSheetState extends State<SosSheet> {
               label: Text(_sending ? 'Getting location…' : 'SEND SOS',
                   style: const TextStyle(fontSize: 18)),
             ),
+            if ((_kind?.needsNote ?? false) && _note.text.trim().isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Describe the emergency so people know what help to bring.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
             const SizedBox(height: 8),
             Text(
               'Sends your location if available, your battery level, and the '
@@ -115,7 +143,8 @@ class _SosSheetState extends State<SosSheet> {
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
-          ],
+            ],
+          ),
         ),
       );
 }
@@ -217,10 +246,12 @@ class _SosTabState extends State<SosTab> {
                           leading: Text(sos.kind.emoji,
                               style: const TextStyle(fontSize: 28)),
                           title: Text(
-                            '${sos.kind.english} · '
+                            '${sos.headline} · '
                             '${widget.contacts.isAnonymous(fp) ? 'Name unknown' : widget.contacts.nameFor(fp)}',
                             style:
                                 const TextStyle(fontWeight: FontWeight.bold),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           // ID always visible: it is the part that cannot be
                           // faked, and it is how you tell two people apart.
@@ -303,9 +334,12 @@ class _SosAlertScreenState extends State<SosAlertScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(sos.kind.emoji, style: const TextStyle(fontSize: 56)),
-              Text('SOS · ${sos.kind.english.toUpperCase()}',
-                  style: const TextStyle(
-                      fontSize: 30, fontWeight: FontWeight.bold)),
+              // For a custom SOS the person's own words are the emergency, so
+              // they get the headline instead of a generic label.
+              Text('SOS · ${sos.headline.toUpperCase()}',
+                  style: TextStyle(
+                      fontSize: sos.headline.length > 28 ? 22 : 30,
+                      fontWeight: FontWeight.bold)),
               Text(sos.kind.bangla, style: const TextStyle(fontSize: 20)),
               const SizedBox(height: 16),
               _row(Icons.person, sender, sub: idLine),
@@ -313,7 +347,11 @@ class _SosAlertScreenState extends State<SosAlertScreen> {
               _row(Icons.verified_user, 'Signature verified',
                   sub: 'this message was not altered in transit'),
               _row(Icons.place, sos.locationLabel),
-              if (sos.note != null && sos.note!.isNotEmpty)
+              // Skipped for a custom SOS: the note is already the headline, and
+              // repeating it wastes a line on a screen read in a hurry.
+              if (sos.kind != SosKind.other &&
+                  sos.note != null &&
+                  sos.note!.isNotEmpty)
                 _row(Icons.sticky_note_2, sos.note!),
               _row(
                 Icons.route,

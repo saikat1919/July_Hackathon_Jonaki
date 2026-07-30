@@ -11,7 +11,11 @@ enum ReportKind {
   food('food', '🍞', 'Food', 'খাবার'),
   water('water', '💧', 'Clean water', 'বিশুদ্ধ পানি'),
   charging('charging', '⚡', 'Charging point', 'চার্জিং'),
-  danger('danger', '🚨', 'Danger zone', 'বিপদ');
+  danger('danger', '🚨', 'Danger zone', 'বিপদ'),
+
+  /// Anything the eight boxes miss: a downed power line, a boat crossing, a
+  /// pharmacy that is open. Requires a description — see [needsNote].
+  other('other', '❓', 'Something else', 'অন্য কিছু');
 
   const ReportKind(this.wire, this.emoji, this.english, this.bangla);
 
@@ -20,9 +24,16 @@ enum ReportKind {
   final String english;
   final String bangla;
 
+  /// A pin labelled only "Something else" is noise on a map, so the note
+  /// stops being optional.
+  bool get needsNote => this == ReportKind.other;
+
+  /// Unknown values map to [other], not to danger. An older build receiving a
+  /// type a newer one added must not paint an unexplained hazard on the map
+  /// and send people around it for no reason.
   static ReportKind fromWire(String? s) => ReportKind.values.firstWhere(
         (k) => k.wire == s,
-        orElse: () => ReportKind.danger,
+        orElse: () => ReportKind.other,
       );
 }
 
@@ -49,6 +60,15 @@ class MapReport {
   final DateTime at;
   final String? note;
   final int confirms;
+
+  /// What to show as the pin's title. For a custom report the reporter's own
+  /// words are the content, so they lead instead of an empty label.
+  String get headline {
+    if (kind == ReportKind.other && note != null && note!.isNotEmpty) {
+      return note!;
+    }
+    return kind.english;
+  }
 
   /// 1 = LOW, 2 = MEDIUM, 3+ = HIGH. Tuned so HIGH is reachable in a
   /// four-phone demo; the 5+ threshold it replaced never could be.

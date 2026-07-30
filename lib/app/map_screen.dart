@@ -135,24 +135,42 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _addReport(LatLng at) async {
+    // isScrollControlled + a scrollable list, because a default bottom sheet
+    // is capped near half the screen height and a plain Column does not
+    // scroll: the ninth report type was being clipped off the bottom with no
+    // way to reach it.
     final kind = await showModalBottomSheet<ReportKind>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('What is here?', style: TextStyle(fontSize: 18)),
-            ),
-            for (final k in ReportKind.values)
-              ListTile(
-                leading: Text(k.emoji, style: const TextStyle(fontSize: 24)),
-                title: Text(k.english),
-                subtitle: Text(k.bangla),
-                onTap: () => Navigator.pop(context, k),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('What is here?', style: TextStyle(fontSize: 18)),
               ),
-          ],
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final k in ReportKind.values)
+                      ListTile(
+                        leading:
+                            Text(k.emoji, style: const TextStyle(fontSize: 24)),
+                        title: Text(k.english),
+                        subtitle: Text(k.bangla),
+                        onTap: () => Navigator.pop(context, k),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -194,7 +212,9 @@ class _MapScreenState extends State<MapScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(r.kind.english,
+                        // A custom pin leads with what the reporter wrote:
+                        // "Something else" on its own tells a reader nothing.
+                        Text(r.headline,
                             style: const TextStyle(
                                 fontSize: 20, fontWeight: FontWeight.bold)),
                         Text(r.kind.bangla),
@@ -213,7 +233,10 @@ class _MapScreenState extends State<MapScreen> {
               ),
               const SizedBox(height: 4),
               Chip(label: Text('Confidence: ${r.confidence}')),
-              if (r.note != null && r.note!.isNotEmpty) ...[
+              // Skipped for a custom pin: the note is already the headline.
+              if (r.kind != ReportKind.other &&
+                  r.note != null &&
+                  r.note!.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Text(r.note!),
               ],
@@ -258,6 +281,9 @@ class _NoteDialog extends StatefulWidget {
 class _NoteDialogState extends State<_NoteDialog> {
   final _controller = TextEditingController();
 
+  bool get _required => widget.kind.needsNote;
+  bool get _ready => !_required || _controller.text.trim().isNotEmpty;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -279,26 +305,34 @@ class _NoteDialogState extends State<_NoteDialog> {
           maxLength: 200,
           maxLines: 2,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Add a detail (optional)',
-            hintText: 'e.g. passable on foot only',
-            border: OutlineInputBorder(),
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            labelText: _required
+                ? 'What is here? (required)'
+                : 'Add a detail (optional)',
+            hintText: _required
+                ? 'e.g. power line down across the road'
+                : 'e.g. passable on foot only',
+            border: const OutlineInputBorder(),
           ),
-          onSubmitted: (v) => Navigator.pop(context, v),
+          onSubmitted: (v) => _ready ? Navigator.pop(context, v) : null,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          // Skipping must be one tap: a frightened person marking a danger
-          // zone should not be forced to write prose.
-          TextButton(
-            onPressed: () => Navigator.pop(context, ''),
-            child: const Text('No detail'),
-          ),
+          // Skipping stays one tap for the eight known types: someone marking
+          // a danger zone should not be made to write prose. It disappears for
+          // a custom pin, where the description IS the report.
+          if (!_required)
+            TextButton(
+              onPressed: () => Navigator.pop(context, ''),
+              child: const Text('No detail'),
+            ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, _controller.text),
+            onPressed:
+                _ready ? () => Navigator.pop(context, _controller.text) : null,
             child: const Text('Report'),
           ),
         ],

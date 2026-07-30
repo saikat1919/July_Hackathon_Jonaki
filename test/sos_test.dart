@@ -62,9 +62,47 @@ void main() {
       expect(p.locationLabel, contains('placed by hand'));
     });
 
-    test('unknown kind falls back to medical rather than crashing', () {
-      final p = SosPayload.fromJson({'kind': 'zombie-apocalypse'});
-      expect(p.kind, SosKind.medical);
+    test('unknown kind falls back to "something else", not medical', () {
+      // An older build receiving a type a newer one added must not invent a
+      // medical emergency. "Something else, here is what they wrote" is the
+      // honest reading.
+      final p = SosPayload.fromJson({'kind': 'earthquake'});
+      expect(p.kind, SosKind.other);
+    });
+
+    test('a custom SOS puts the sender\'s words in the headline', () {
+      // For the five fixed types the label is the information. For a custom
+      // one the label says nothing, so what the person wrote has to lead.
+      final custom = SosPayload(
+        kind: SosKind.other,
+        note: 'trapped under rubble, two people',
+      );
+      expect(custom.headline, 'trapped under rubble, two people');
+
+      final fire = SosPayload(kind: SosKind.fire, note: 'building 3');
+      expect(fire.headline, 'Fire',
+          reason: 'a known type leads with its label, not the note');
+    });
+
+    test('a custom SOS with no note falls back to the label, never blank', () {
+      // The UI refuses to send this, but a malformed one could still arrive
+      // over the mesh and must not render as an empty headline.
+      expect(SosPayload(kind: SosKind.other).headline, 'Something else');
+    });
+
+    test('only the custom type requires a note', () {
+      expect(SosKind.other.needsNote, isTrue);
+      for (final k in SosKind.values.where((k) => k != SosKind.other)) {
+        expect(k.needsNote, isFalse, reason: k.english);
+      }
+    });
+
+    test('a custom SOS round-trips through the envelope', () {
+      final p = SosPayload(kind: SosKind.other, note: 'chemical smell in air');
+      final back = SosPayload.fromJson(p.toJson());
+      expect(back.kind, SosKind.other);
+      expect(back.note, 'chemical smell in air');
+      expect(back.headline, 'chemical smell in air');
     });
 
     test('every kind carries both languages', () {
