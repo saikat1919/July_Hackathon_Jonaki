@@ -341,6 +341,7 @@ class MeshService extends ChangeNotifier {
     String? note,
     double? manualLat,
     double? manualLon,
+    String? smsOrigin,
   }) async {
     final n = node;
     if (n == null) return null;
@@ -366,6 +367,7 @@ class MeshService extends ChangeNotifier {
       fix: fix,
       fixAge: age,
       battery: await readBatteryLevel(),
+      smsOrigin: smsOrigin,
     );
 
     final e = await n.publish(EnvelopeType.sos, encodePayload(payload.toJson()));

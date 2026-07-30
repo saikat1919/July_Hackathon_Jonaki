@@ -50,7 +50,20 @@ class SosPayload {
     this.fix = FixSource.none,
     this.fixAge,
     this.battery,
+    this.smsOrigin,
   });
+
+  /// Phone number this SOS arrived from over SMS, when a gateway relayed it in
+  /// on behalf of a feature phone.
+  ///
+  /// A button phone has no keypair, so it cannot sign anything. The gateway
+  /// signs the envelope with its OWN key, which means the signature proves
+  /// "this gateway relayed this", not "this person sent this". Recording the
+  /// origin number lets the UI say exactly that instead of letting an
+  /// unverifiable message look like any other signed SOS.
+  final String? smsOrigin;
+
+  bool get isFromSms => smsOrigin != null;
 
   final SosKind kind;
   final String? note;
@@ -72,6 +85,7 @@ class SosPayload {
         'loc': fix.wire,
         'locAge': ?fixAge?.inSeconds,
         'batt': ?battery,
+        'sms': ?smsOrigin,
       };
 
   static SosPayload fromJson(Map<String, Object?> j) => SosPayload(
@@ -84,6 +98,7 @@ class SosPayload {
             ? null
             : Duration(seconds: (j['locAge'] as num).toInt()),
         battery: (j['batt'] as num?)?.toInt(),
+        smsOrigin: j['sms'] as String?,
       );
 
   /// Human sentence for the alert screen. Never returns an empty string —

@@ -4,9 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app/chat_screen.dart';
 import 'app/contacts.dart';
 import 'app/map_screen.dart';
+import 'app/gateway_screen.dart';
 import 'app/mesh_service.dart';
 import 'app/radio_readiness.dart';
 import 'app/readiness_card.dart';
+import 'app/sms_bridge.dart';
 import 'app/sos_screen.dart';
 import 'gossip/envelope.dart';
 
@@ -55,6 +57,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   final mesh = MeshService(serviceId: kServiceId);
   final contacts = Contacts();
+  late final SmsBridge bridge = SmsBridge(mesh);
   int _tab = 0;
 
   List<Blocker> _blockers = const [];
@@ -87,6 +90,7 @@ class _HomeShellState extends State<HomeShell> {
     if (mounted) setState(() => _booting = false);
 
     await _startWhenReady();
+    await bridge.load();
 
     if (savedName == null && mounted) await _askName(prefs);
   }
@@ -168,6 +172,15 @@ class _HomeShellState extends State<HomeShell> {
                       ? 'No one nearby'
                       : '${mesh.peers.length} nearby',
                   style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'SMS gateway',
+              icon: const Icon(Icons.sms),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GatewayScreen(bridge: bridge),
                 ),
               ),
             ),
