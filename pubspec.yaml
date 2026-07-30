@@ -60,11 +60,28 @@ dev_dependencies:
   http: ^1.6.0
   sqlite3: ^3.5.0
   sqflite_common_ffi: ^2.4.2
+  qr: ^4.0.0
+  image: ^4.8.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
 # The following section is specific to Flutter packages.
+# App icon. Regenerate the sources from the logo with
+#   dart run tools/make_icon.dart
+# then re-run
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon.png"
+  # Adaptive icon for Android 8+: the launcher masks and parallax-shifts the
+  # foreground, so it is the padded version, over the navy sampled from the
+  # original artwork.
+  adaptive_icon_background: "#061a32"
+  adaptive_icon_foreground: "assets/icon/foreground.png"
+
 flutter:
 
   # The following line ensures that the Material Icons font is
