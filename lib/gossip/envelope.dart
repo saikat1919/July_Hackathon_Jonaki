@@ -31,7 +31,14 @@ enum EnvelopeType {
   sos(1, priority: 0, defaultLifetime: Duration(hours: 2)),
   sosCancel(2, priority: 0, defaultLifetime: Duration(hours: 2)),
   mapReport(3, priority: 1, defaultLifetime: Duration(hours: 24)),
-  reportConfirm(4, priority: 1, defaultLifetime: Duration(hours: 24));
+  reportConfirm(4, priority: 1, defaultLifetime: Duration(hours: 24)),
+
+  /// "Here is my key and my name." Sent automatically when a peer connects, so
+  /// key exchange never becomes something the user has to perform. Never shown
+  /// as a message. Short-lived and low TTL: it is about who is here now, and
+  /// distant peers still learn keys from ordinary traffic, which carries the
+  /// same `ek` field.
+  announce(5, priority: 1, defaultLifetime: Duration(minutes: 10));
 
   const EnvelopeType(this.wire,
       {required this.priority, required this.defaultLifetime});
@@ -57,6 +64,7 @@ enum EnvelopeType {
 
 const int defaultTtl = 8;
 const int sosTtl = 16;
+const int announceTtl = 3;
 const int maxPayloadBytes = 4096;
 const int maxTextChars = 1000;
 const int fingerprintBytes = 4;

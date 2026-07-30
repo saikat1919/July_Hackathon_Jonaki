@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/chat_screen.dart';
 import 'app/contacts.dart';
 import 'app/map_screen.dart';
 import 'app/mesh_service.dart';
+import 'app/radio_readiness.dart';
+import 'app/readiness_card.dart';
 import 'app/sos_screen.dart';
 import 'gossip/envelope.dart';
 
@@ -37,18 +40,60 @@ class _HomeShellState extends State<HomeShell> {
   final contacts = Contacts();
   int _tab = 0;
 
+  List<Blocker> _blockers = const [];
+  bool _booting = true;
+
   @override
   void initState() {
     super.initState();
     mesh.addListener(_refresh);
     contacts.addListener(_refresh);
-    contacts.load();
-    mesh.keys.load();
+    mesh.contacts = contacts;
     mesh.keys.addListener(_refresh);
-    mesh.bootIdentity();
     // An SOS that needs you to be looking at the right tab is not an alert.
     mesh.incomingSos.listen(_raiseAlert);
+    _boot();
   }
+
+  /// Everything a user should never have to ask for: load state, get the
+  /// radios ready, and start the mesh. Nobody opens a crisis communication app
+  /// and then wants to hunt for a play button.
+  Future<void> _boot() async {
+    await contacts.load();
+    await mesh.keys.load();
+    await mesh.bootIdentity();
+
+    final prefs = await SharedPreferences.getInstance();
+    final savedName = prefs.getString(_nameKey);
+    if (savedName != null) mesh.myName = savedName;
+
+    if (mounted) setState(() => _booting = false);
+
+    await _startWhenReady();
+
+    if (savedName == null && mounted) await _askName(prefs);
+  }
+
+  /// Checks the radios, starts if clear, and shows exactly what is blocking if
+  /// not. Re-run every time the user fixes something.
+  Future<void> _startWhenReady() async {
+    final blockers = await RadioReadiness.check();
+    if (!mounted) return;
+    setState(() => _blockers = blockers);
+    if (blockers.isEmpty && !mesh.running) await mesh.start();
+  }
+
+  Future<void> _askName(SharedPreferences prefs) async {
+    final name = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => NamePrompt(onSubmit: (v) => Navigator.pop(ctx, v)),
+    );
+    await prefs.setString(_nameKey, name ?? '');
+    await mesh.setMyName(name ?? '');
+  }
+
+  static const _nameKey = 'my.name';
 
   Future<void> _raiseAlert(Envelope e) async {
     if (!mounted) return;
@@ -86,8 +131,14 @@ class _HomeShellState extends State<HomeShell> {
             Center(
               child: Padding(
                 padding: const EdgeInsets.only(right: 12),
-                child: Text('${mesh.peers.length} peer'
-                    '${mesh.peers.length == 1 ? '' : 's'}'),
+                // Plain language: "0 peers" reads as an error code. "No one
+                // nearby" is a fact a user can understand and act on.
+                child: Text(
+                  mesh.peers.isEmpty
+                      ? 'No one nearby'
+                      : '${mesh.peers.length} nearby',
+                  style: const TextStyle(fontSize: 13),
+                ),
               ),
             ),
             IconButton(
@@ -97,11 +148,38 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ],
         ),
-        body: switch (_tab) {
-          0 => ChatScreen(mesh: mesh, contacts: contacts),
-          1 => MapScreen(mesh: mesh, contacts: contacts),
-          _ => MeshScreen(mesh: mesh),
-        },
+        // SOS must be reachable from wherever the user happens to be. Burying
+        // the emergency feature behind a tab is not a thing to do in a crisis
+        // app.
+        floatingActionButton: _booting
+            ? null
+            : FloatingActionButton.extended(
+                onPressed: mesh.running
+                    ? () => SosSheet.show(context, mesh)
+                    : null,
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                icon: const Icon(Icons.emergency_share),
+                label: const Text('SOS',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+        body: _booting
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  ReadinessCard(
+                    blockers: _blockers,
+                    onFixed: _startWhenReady,
+                  ),
+                  Expanded(
+                    child: switch (_tab) {
+                      0 => ChatScreen(mesh: mesh, contacts: contacts),
+                      1 => MapScreen(mesh: mesh, contacts: contacts),
+                      _ => MeshScreen(mesh: mesh),
+                    },
+                  ),
+                ],
+              ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _tab,
           onDestinationSelected: (i) => setState(() => _tab = i),

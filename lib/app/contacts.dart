@@ -25,10 +25,28 @@ class Contacts extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Names a peer told us about themselves. Kept apart from [_names] so a
+  /// nickname the user typed always wins: someone else should not be able to
+  /// rename themselves on your phone after you have labelled them.
+  final Map<String, String> _announced = {};
+
   /// Falls back to the fingerprint so an unknown sender is still identifiable.
   /// Never silently blank: on an SOS screen "who sent this" always has an answer.
-  String nameFor(String fingerprint) =>
-      _names[fingerprint.toUpperCase()] ?? fingerprint.toUpperCase();
+  String nameFor(String fingerprint) {
+    final fp = fingerprint.toUpperCase();
+    return _names[fp] ?? _announced[fp] ?? fp;
+  }
+
+  /// Records a self-declared name. Never persisted and never overrides a
+  /// user-set nickname.
+  void learnAnnouncedName(String fingerprint, String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final fp = fingerprint.toUpperCase();
+    if (_announced[fp] == trimmed) return;
+    _announced[fp] = trimmed.length > 24 ? trimmed.substring(0, 24) : trimmed;
+    notifyListeners();
+  }
 
   bool isKnown(String fingerprint) =>
       _names.containsKey(fingerprint.toUpperCase());

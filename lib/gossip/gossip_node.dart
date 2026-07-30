@@ -75,8 +75,13 @@ class GossipNode {
   }
 
   /// Compose, store locally, and push to every live peer immediately.
-  Future<Envelope> publish(EnvelopeType type, Uint8List payload) async {
-    final e = await identity.compose(type: type, payload: payload, now: _clock());
+  Future<Envelope> publish(
+    EnvelopeType type,
+    Uint8List payload, {
+    int? ttl,
+  }) async {
+    final e = await identity.compose(
+        type: type, payload: payload, ttl: ttl, now: _clock());
     await _accept(e, local: true);
     for (final peer in transport.connectedPeers) {
       await _sendEnvelope(peer, e);

@@ -13,6 +13,7 @@ import '../transport/transport.dart';
 import '../gossip/crypto_box.dart';
 import '../store/sqflite_store.dart';
 import 'chat.dart';
+import 'contacts.dart';
 import 'identity_store.dart';
 import 'key_directory.dart';
 import 'report.dart';
@@ -118,14 +119,22 @@ class MeshService extends ChangeNotifier {
     final n = GossipNode(identity: identity!, store: s, transport: t);
 
     n.accepted.listen((e) async {
-      inbox.insert(0, e);
+      // Announces are plumbing, not messages: they teach keys and names and
+      // then get out of the way. Keeping them out of the inbox stops them
+      // cluttering threads and peer lists.
+      if (e.type != EnvelopeType.announce) inbox.insert(0, e);
       // Learn keys from ordinary traffic. Hearing one global message from
       // someone is enough to message them privately afterwards.
       final trusted = await keys.learnFrom(e);
       if (!trusted) {
         _say('KEY CONFLICT from ${e.senderFingerprint} — not trusted');
       }
-      _say('recv ${_label(e)} via ${e.path.length} hops');
+      _learnName(e);
+      if (e.type == EnvelopeType.announce) {
+        _say('met ${nameOf(e.senderFingerprint)}');
+      } else {
+        _say('recv ${_label(e)} via ${e.path.length} hops');
+      }
       // Someone else's live SOS takes over the screen. Mine does not: I already
       // know, and alerting the sender would bury the cancel button.
       if (e.type == EnvelopeType.sos &&
@@ -139,6 +148,10 @@ class MeshService extends ChangeNotifier {
       _say(e.kind == PeerEventKind.connected
           ? 'peer + ${t.fingerprintOf(e.peerId) ?? e.peerId}'
           : 'peer − ${t.fingerprintOf(e.peerId) ?? e.peerId}');
+      // Introduce ourselves the moment someone appears. This is what stops key
+      // exchange being a chore the user has to understand: by the time they
+      // open a personal thread, the key is already there.
+      if (e.kind == PeerEventKind.connected) _announce();
       notifyListeners();
     });
 
@@ -219,6 +232,48 @@ class MeshService extends ChangeNotifier {
         ? 'queued personal to $to (no peers yet)'
         : 'sent personal to $to (encrypted)');
     return null;
+  }
+
+  /// Your own display name, broadcast so peers see a name instead of hex.
+  String myName = '';
+
+  /// Set by the app so announced names can reach the contact book.
+  Contacts? contacts;
+
+  String nameOf(String fingerprint) =>
+      contacts?.nameFor(fingerprint) ?? fingerprint;
+
+  void _learnName(Envelope e) {
+    final c = contacts;
+    if (c == null) return;
+    try {
+      final name = decodePayload(e.payload)['name'];
+      if (name is String) c.learnAnnouncedName(e.senderFingerprint, name);
+    } catch (_) {
+      // Payload is not JSON or has no name. Nothing to learn, nothing broken.
+    }
+  }
+
+  /// Publishes our key and name. Cheap, short-lived, never rendered.
+  Future<void> _announce() async {
+    final n = node;
+    final me = identity;
+    if (n == null || me == null) return;
+    await n.publish(
+      EnvelopeType.announce,
+      encodePayload({
+        'ek': base64Encode(me.encPublicKey),
+        'name': ?(myName.trim().isEmpty ? null : myName.trim()),
+      }),
+      ttl: announceTtl,
+    );
+  }
+
+  /// Called after the user sets or changes their name.
+  Future<void> setMyName(String name) async {
+    myName = name.trim();
+    await _announce();
+    notifyListeners();
   }
 
   /// Opens a sealed message. Returns null whenever this phone is not a party to
