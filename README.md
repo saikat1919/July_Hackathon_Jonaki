@@ -25,7 +25,7 @@ over Bluetooth and Wi-Fi, and every phone relays for every other phone.
 - <u>**Offline map**:</u> Real street tiles bundled in the app, with community reports:
   road blocked, fire, shelter, medical camp, food, water, charging, danger.
   Reports gain confidence as other people confirm them.
-- <u>**Store and forward:**</u> A message with nowhere to go waits. When you walk
+- **Store and forward:** A message with nowhere to go waits. When you walk
   within range of someone, it goes. Someone travelling between two cut-off areas
   carries messages between them without doing anything.
 
